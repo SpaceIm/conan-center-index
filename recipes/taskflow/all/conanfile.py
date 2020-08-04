@@ -51,6 +51,9 @@ class TaskflowConan(ConanFile):
         if version < minimal_version[compiler]:
             raise ConanInvalidConfiguration("%s requires a compiler that supports at least C++%s" % (self.name, minimal_cpp_standard))
 
+    def package_id(self):
+        self.info.header_only()
+
     def source(self):
         tools.get(**self.conan_data["sources"][self.version])
         extracted_dir = self.name + "-" + self.version
@@ -60,13 +63,11 @@ class TaskflowConan(ConanFile):
         self.copy(pattern="LICENSE", dst="licenses", src=self._source_subfolder)
         self.copy(pattern="*", dst=os.path.join("include", "taskflow"), src=os.path.join(self._source_subfolder, "taskflow"))
 
-    def package_id(self):
-        self.info.header_only()
-
     def package_info(self):
         if self.settings.os == "Linux":
             self.cpp_info.system_libs.append("pthread")
         if self.settings.compiler == "Visual Studio":
             self.cpp_info.defines.append("_ENABLE_EXTENDED_ALIGNED_STORAGE")
-        self.cpp_info.names["cmake_find_package"] = "Taskflow"
-        self.cpp_info.names["cmake_find_package_multi"] = "Taskflow"
+        cmake_name = "Taskflow" if tools.Version(self.version) >= "2.5.0" else "Cpp-Taskflow"
+        self.cpp_info.names["cmake_find_package"] = cmake_name
+        self.cpp_info.names["cmake_find_package_multi"] = cmake_name

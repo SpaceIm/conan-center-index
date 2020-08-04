@@ -9,6 +9,7 @@ class TestPackageConan(ConanFile):
 
     def build(self):
         cmake = CMake(self)
+        cmake.definitions["TASKFLOW_GE_250"] = tools.Version(self.deps_cpp_info["taskflow"].version) >= "2.5.0"
         cmake.configure()
         cmake.build()
 
