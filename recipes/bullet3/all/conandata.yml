@@ -1,4 +1,7 @@
 sources:
+  "3.05":
+    url: "https://github.com/bulletphysics/bullet3/archive/3.05.tar.gz"
+    sha256: "49c9bddd978bef81b386cf0cb9497feb7c83f4cf6d8b8c27494c7fbc8be2fc4c"
   "2.89":
     url: "https://github.com/bulletphysics/bullet3/archive/2.89.tar.gz"
     sha256: "621b36e91c0371933f3c2156db22c083383164881d2a6b84636759dc4cbb0bb8"

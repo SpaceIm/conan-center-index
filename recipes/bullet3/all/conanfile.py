@@ -69,6 +69,8 @@ class Bullet3Conan(ConanFile):
         self._cmake.definitions["BUILD_OPENGL3_DEMOS"] = False
         self._cmake.definitions["BUILD_BULLET2_DEMOS"] = False
         self._cmake.definitions["BUILD_EXTRAS"] = self.options.extras
+        if tools.Version(self.version) > "3.05":
+            self._cmake.definitions["INSTALL_EXTRA_LIBS"] = self.options.extras
         self._cmake.definitions["BUILD_UNIT_TESTS"] = False
         if self.settings.compiler == "Visual Studio":
             self._cmake.definitions["USE_MSVC_RUNTIME_LIBRARY_DLL"] = "MD" in self.settings.compiler.runtime
