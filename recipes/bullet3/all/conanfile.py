@@ -49,6 +49,11 @@ class Bullet3Conan(ConanFile):
         if self.settings.compiler == "Visual Studio" and self.options.shared:
             raise ConanInvalidConfiguration("Shared libraries on Visual Studio not supported")
 
+    def requirements(self):
+        if self.options.extras:
+            self.requires("tinyxml2/2.6.2")
+            self.requires("tinyobjloader/1.0.6")
+
     def source(self):
         tools.get(**self.conan_data["sources"][self.version])
         os.rename("bullet3-{}".format(self.version), self._source_subfolder)
@@ -61,7 +66,6 @@ class Bullet3Conan(ConanFile):
         self._cmake.definitions["INSTALL_LIBS"] = True
         self._cmake.definitions["USE_GRAPHICAL_BENCHMARK"] = self.options.graphical_benchmark
         self._cmake.definitions["USE_DOUBLE_PRECISION"] = self.options.double_precision
-        self._cmake.definitions["BULLET2_USE_THREAD_LOCKS"] = self.options.bt2_thread_locks
         self._cmake.definitions["USE_SOFT_BODY_MULTI_BODY_DYNAMICS_WORLD"] = self.options.soft_body_multi_body_dynamics_world
         self._cmake.definitions["BUILD_ENET"] = self.options.network_support
         self._cmake.definitions["BUILD_CLSOCKET"] = self.options.network_support
