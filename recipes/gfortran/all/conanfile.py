@@ -19,44 +19,45 @@ class GFortranConan(ConanFile):
 
     @property
     def _source_subfolder(self):
-        return os.path.join(self.source_folder, "source_subfolder_{}".format(str(self.settings.os)))
+        return "source_subfolder"
 
     def validate(self):
         if self.settings.arch != "x86_64":
             raise ConanInvalidConfiguration("No binaries available for the architecture '{}'.".format(self.settings.arch))
-        if str(self.settings.os) not in ("Windows", "Linux", "Macos"):
-            raise ConanInvalidConfiguration("No binaries available for the OS '{}'.".format(self.settings.os))
+        the_os = str(self.settings.os)
+        if the_os not in self.conan_data["sources"][self.version]["url"]:
+            raise ConanInvalidConfiguration("No binaries available for {0}".format(the_os))
 
     def build_requirements(self):
         if self.settings.os == "Windows":
             self.build_requires("7zip/19.00")
 
-    def source(self):
-        url = self.conan_data["sources"][self.version]["url"]
-        for it in url.keys():
-            if self.settings.os == "Windows" and it == "Windows":
-                filename = url[it]["filename"]
-                tools.download(**url[it])
-                self.run("7z x {0}".format(filename))
-                os.unlink(filename)
-                os.rename("mingw64", "source_subfolder_Windows")
-            elif it != "Windows":
-                tools.get(**url[it])
-                pattern = "gcc-*" if it == "Linux" else "usr"
-                os.rename(glob.glob(pattern)[0], "source_subfolder_{}".format(it))
+    def build(self):
+        the_os = str(self.settings.os)
+        url = self.conan_data["sources"][self.version]["url"][the_os]
+        sha256 = self.conan_data["sources"][self.version]["sha256"][the_os]
+        if the_os == "Windows":
+            filename = os.path.basename(url)
+            tools.download(url, filename, sha256=sha256)
+            self.run("7z x {}".format(filename))
+            os.remove(filename)
+            extracted_dir = "mingw64"
+        else:
+            tools.get(url, sha256=sha256)
+            extracted_dir = glob.glob("gcc-*")[0] if the_os == "Linux" else os.path.join("usr", "local")
+        os.rename(extracted_dir, self._source_subfolder)
 
     def _extract_license(self):
-        info = tools.load(os.path.join(self.source_folder, "source_subfolder_Linux", "share", "info", "gfortran.info"))
+        info = tools.load(os.path.join(self._source_subfolder, "share", "info", "gfortran.info"))
         license_contents = info[info.find("Version 3"):info.find("END OF TERMS", 1)]
-        tools.save("LICENSE", license_contents)
+        return license_contents
 
     def package(self):
-        self._extract_license()
-        self.copy("LICENSE", dst="licenses")
+        tools.save(os.path.join(self.package_folder, "licenses", "LICENSE"), self._extract_license())
         self.copy("gfortran*", dst="bin", src=os.path.join(self._source_subfolder, "bin"))
-        self.copy("gfortran", dst="bin", src=os.path.join(self._source_subfolder, "local", "bin"))
+        self.copy("f951", dst="bin", src=os.path.join(self._source_subfolder, "libexec", "gcc", "x86_64-apple-darwin19", "10.2.0"))
         self.copy("libgfortran.a", dst="lib", src=os.path.join(self._source_subfolder, "lib64"))
-        self.copy("libgfortran.a", dst="lib", src=os.path.join(self._source_subfolder, "local", "lib"))
+        self.copy("libgfortran.a", dst="lib", src=os.path.join(self._source_subfolder, "lib"))
         self.copy("libgfortran.a", dst="lib", src=os.path.join(self._source_subfolder, "lib", "gcc", "x86_64-w64-mingw32", "10.2.0"))
 
     def package_info(self):
