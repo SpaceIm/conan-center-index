@@ -159,12 +159,11 @@ class QtConan(ConanFile):
         if self.settings.os not in ["Linux", "FreeBSD"]:
             del self.options.with_icu
             del self.options.with_fontconfig
-            self.options.with_glib = False
 
         if self.settings.os == "Windows":
             self.options.opengl = "dynamic"
         if self.settings.os != "Linux":
-            self.options.qtwayland = False
+            del self.options.qtwayland
 
         for m in self._submodules:
             if m not in self._get_module_tree:
@@ -190,9 +189,6 @@ class QtConan(ConanFile):
         elif tools.Version(self.settings.compiler.version) < minimum_version:
             raise ConanInvalidConfiguration("C++17 support required, which your compiler does not support.")
 
-        if self.options.widgets and not self.options.gui:
-            raise ConanInvalidConfiguration("using option qt:widgets without option qt:gui is not possible. "
-                                            "You can either disable qt:widgets or enable qt:gui")
         if not self.options.gui:
             del self.options.opengl
             del self.options.with_vulkan
@@ -273,10 +269,27 @@ class QtConan(ConanFile):
             self.requires("opengl/system")
         if self.options.with_zstd:
             self.requires("zstd/1.5.0")
-        if self.options.qtwayland:
+        if self.options.get_safe("qtwayland"):
             self.requires("wayland/1.19.0")
         if self.options.with_brotli:
             self.requires("brotli/1.0.9")
+        if self.options.qtimageformats:
+            self.requires("jasper/2.0.32")
+            self.requires("libtiff/4.2.0")
+            self.requires("libwebp/1.2.0")
+            # TODO: add libmng to create QMngPlugin
+
+    def validate(self):
+        if self.options.widgets and not self.options.gui:
+            raise ConanInvalidConfiguration("widgets requires gui")
+        if self.options.qtsvg and not self.options.gui:
+            raise ConanInvalidConfiguration("qtsvg requires gui")
+        if self.options.qtimageformats and not self.options.gui:
+            raise ConanInvalidConfiguration("qtimageformats requires gui")
+        if self.options.qtquickcontrols2 and not (self.options.gui and self.options.qtdeclarative and self.options.qtsvg and self.options.qtimageformats):
+            raise ConanInvalidConfiguration("qtquickcontrols2 requires gui, qtdeclarative, qtsvg and qtimageformats")
+        if self.options.qtcharts and not (self.options.gui and self.options.widgets):
+            raise ConanInvalidConfiguration("qtcharts requires gui and widgets")
 
     def build_requirements(self):
         self.build_requires("cmake/3.20.2")
@@ -681,8 +694,6 @@ class QtConan(ConanFile):
             self.cpp_info.components[componentname].libs = ["Qt6%s%s" % (module, libsuffix)]
             self.cpp_info.components[componentname].includedirs = ["include", os.path.join("include", "Qt%s" % module)]
             self.cpp_info.components[componentname].defines = ["QT_%s_LIB" % module.upper()]
-            if module != "Core" and "Core" not in requires:
-                requires.append("Core")
             self.cpp_info.components[componentname].requires = _get_corrected_reqs(requires)
 
         def _create_plugin(pluginname, libname, type, requires):
@@ -698,194 +709,643 @@ class QtConan(ConanFile):
                 requires.append("Core")
             self.cpp_info.components[componentname].requires = _get_corrected_reqs(requires)
 
-        core_reqs = ["zlib::zlib"]
-        if self.options.with_pcre2:
-            core_reqs.append("pcre2::pcre2")
-        if self.options.with_doubleconversion:
-            core_reqs.append("double-conversion::double-conversion")
-        if self.options.get_safe("with_icu", False):
-            core_reqs.append("icu::icu")
+        def _components():
+            def pcre2():
+                return ["pcre2::pcre2"] if self.options.with_pcre2 else []
 
-        _create_module("Core", core_reqs)
+            def doubleconversion():
+                return ["double-conversion::double-conversion"] if self.options.with_doubleconversion and not self.options.multiconfiguration else []
+
+            def glib():
+                return ["glib::glib"] if self.options.with_glib else []
+
+            def icu():
+                return ["icu::icu"] if self.options.get_safe("with_icu") else []
+
+            def zstd():
+                return ["zstd::zstd"] if self.options.with_zstd else []
+
+            def freetype():
+                return ["freetype::freetype"] if self.options.with_freetype else []
+
+            def png():
+                return ["libpng::libpng"] if self.options.with_libpng else []
+
+            def fontconfig():
+                return ["fontconfig::fontconfig"] if self.options.get_safe("with_fontconfig") else []
+
+            def xorg():
+                xorg = []
+                if self.settings.os in ["Linux", "FreeBSD"]:
+                    xorg.append("xorg::xorg")
+                    if not tools.cross_building(self, skip_x64_x86=True):
+                        xorg.append("xkbcommon::xkbcommon")
+                return xorg
+
+            def opengl():
+                return ["opengl::opengl"] if self.settings.os != "Windows" and self.options.get_safe("opengl", "no") != "no" else []
+
+            def harfbuzz():
+                return ["harfbuzz::harfbuzz"] if self.options.with_harfbuzz else []
+
+            def jpeg():
+                if self.options.with_libjpeg == "libjpeg-turbo":
+                    return ["libjpeg-turbo::libjpeg-turbo"]
+                elif self.options.with_libjpeg == "libjpeg":
+                    return ["libjpeg::libjpeg"]
+                return []
+
+            def vulkan():
+                return ["vulkan-loader::vulkan-loader"] if self.options.get_safe("with_vulkan") else []
+
+            def openssl():
+                return ["openssl::openssl"] if self.options.openssl else []
+
+            def brotli():
+                return ["brotli::brotli"] if self.options.with_brotli else []
+
+            modules = {}
+            plugins = {}
+
+            # qtbase
+            ## Core
+            core_system_libs = []
+            core_frameworks = []
+            if self.settings.os == "Windows":
+                core_system_libs.extend(["advapi32", "netapi32", "ole32", "shell32", "user32",
+                                         "uuid", "version", "winmm", "ws2_32", "mpr", "userenv"])
+            elif self.settings.os in ["Linux", "FreeBSD"]:
+                core_system_libs.extend(["m", "dl", "pthread"])
+            elif tools.is_apple_os(self.settings.os):
+                core_frameworks.extend(["CoreFoundation", "Foundation"])
+                if self.settings.os == "Macos":
+                    core_frameworks.extend(["AppKit", "ApplicationServices", "CoreServices",
+                                            "Security", "DiskArbitration", "IOKit"])
+                elif self.settings.os in ["iOS", "tvOS"]:
+                    core_frameworks.append("UIKit")
+                elif self.settings.os == "watchOS":
+                    core_frameworks.append("WatchKit")
+            modules.update({
+                "Core": {
+                    "requires": ["zlib::zlib"] + pcre2() + doubleconversion() + glib() + icu() + zstd(),
+                    "system_libs": core_system_libs,
+                    "frameworks": core_frameworks,
+                }
+            })
+            ## Concurrent
+            modules.update({"Concurrent": {"internal_deps": ["Core"]}})
+            ## Sql
+            modules.update({"Sql": {"internal_deps": ["Core"]}})
+            ## Network
+            network_system_libs = []
+            network_frameworks = []
+            if self.settings.os == "Windows":
+                network_system_libs.extend(["advapi32", "dnsapi", "iphlpapi"])
+                # which condition?
+                # network_system_libs.extend(["Crypt32", "Secur32", "bcrypt", "ncrypt"])
+            elif self.settings.os in ["Linux", "FreeBSD"]:
+                network_system_libs.extend(["dl"])
+            elif tools.is_apple_os(self.settings.os):
+                if self.settings.os == "Macos":
+                    network_frameworks.extend(["CoreServices", "GSS"])
+                if self.settings.os in ["Macos", "iOS"]:
+                    network_frameworks.append("SystemConfiguration")
+            modules.update({
+                "Network": {
+                    "internal_deps": ["Core"],
+                    "requires": ["zlib::zlib"] + openssl() + brotli() + zstd(),
+                    "system_libs": network_system_libs,
+                    "frameworks": network_frameworks,
+                }
+            })
+            ## Xml
+            modules.update({"Xml": {"internal_deps": ["Core"]}})
+            ## DBus
+            dbus_system_libs = []
+            if self.settings.os == "Windows":
+                dbus_system_libs.extend(["advapi32", "netapi32", "user32", "ws2_32"])
+            modules.update({"DBus": {"internal_deps": ["Core"], "system_libs": dbus_system_libs}})
+            ## Test
+            test_frameworks = []
+            if tools.is_apple_os(self.settings.os):
+                test_frameworks.append("Security")
+                if self.settings.os == "Macos":
+                    test_frameworks.extend(["AppKit", "ApplicationServices", "Foundation", "IOKit"])
+            modules.update({"Test": {"internal_deps": ["Core"], "frameworks": test_frameworks}})
+
+            if self.options.gui:
+                ## Gui
+                gui_system_libs = []
+                gui_frameworks = []
+                if self.settings.os == "Windows":
+                    gui_system_libs.extend(["advapi32", "gdi32", "ole32", "shell32",
+                                            "user32", "d3d11", "dxgi", "dxguid"])
+                    # which condition?
+                    # gui_system_libs.extend(["d2d1", "dwrite", "uuid"])
+                    if self.settings.compiler == "gcc":
+                        gui_system_libs.append("uuid")
+                elif self.settings.os in ["Linux", "FreeBSD"]:
+                    gui_system_libs.append("dl")
+                elif tools.is_apple_os(self.settings.os):
+                    gui_frameworks.extend(["CoreServices", "CoreGraphics", "CoreText", "Foundation", "ImageIO"])
+                    if self.settings.os == "Macos":
+                        gui_frameworks.extend(["AppKit", "Carbon"])
+                    if self.settings.os in ["Macos", "iOS"]:
+                        gui_frameworks.append("Metal")
+                    if self.settings.os != "Macos":
+                        gui_frameworks.append("UIKit")
+                modules.update({
+                    "Gui": {
+                        "internal_deps": ["Core", "DBus"],
+                        "requires": ["zlib::zlib"] + freetype() + png() + fontconfig() + xorg() +
+                                    opengl() + harfbuzz() + jpeg() + vulkan() + glib(),
+                        "system_libs": gui_system_libs,
+                        "frameworks": gui_frameworks,
+                    }
+                })
+                ## OpenGL
+                if self.options.get_safe("opengl", "no") != "no":
+                    modules.update({"OpenGL": {"internal_deps": ["Core", "Gui"], "requires": vulkan()}})
+
+                ## platforms plugins
+                if self.settings.os == "Android":
+                    # TODO: should link to EGL also
+                    plugins.update({
+                        "QAndroidIntegrationPlugin": {
+                            "libs": ["qtforandroid"],
+                            "type": "platforms",
+                            "internal_deps": ["Core", "Gui"],
+                            "system_libs": ["android", "jnigraphics"],
+                            "requires": ["sqlite3::sqlite3"],
+                        }
+                    })
+                else:
+                    plugins.update({
+                        "QMinimalIntegrationPlugin": {
+                            "libs": ["qminimal"],
+                            "type": "platforms",
+                            "internal_deps": ["Core", "Gui"],
+                            "requires": freetype(),
+                        }
+                    })
+                    if self.options.get_safe("with_fontconfig"):
+                        plugins.update({
+                            "QOffscreenIntegrationPlugin": {
+                                "libs": ["qoffscreen"],
+                                "type": "platforms",
+                                "internal_deps": ["Core", "Gui"],
+                                "requires": xorg(),
+                            }
+                        })
+                if self.settings.os in ["Linux", "FreeBSD"]:
+                    # TODO: depends on Qt::XcbQpaPrivate
+                    plugins.update({
+                        "QXcbIntegrationPlugin": {
+                            "libs": ["qxcb"],
+                            "type": "platforms",
+                            "internal_deps": ["Core", "Gui"],
+                        }
+                    })
+                    # TODO: more plugins for xcb
+                if self.settings.os in ["iOS", "tvOS"]:
+                    iosintegrationplugin_frameworks = ["AudioToolbox", "Foundation", "Metal", "QuartzCore", "UIKit"]
+                    if self.settings.os != "tvOS":
+                        iosintegrationplugin_frameworks.append("AssetsLibrary")
+                    plugins.update({
+                        "QIOSIntegrationPlugin": {
+                            "libs": ["qios"],
+                            "type": "platforms",
+                            "internal_deps": ["Core", "Gui"],
+                            "requires": opengl(),
+                            "frameworks": iosintegrationplugin_frameworks,
+                        }
+                    })
+                if self.settings.os == "Macos":
+                    plugins.update({
+                        "QCocoaIntegrationPlugin": {
+                            "libs": ["qcocoa"],
+                            "type": "platforms",
+                            "internal_deps": ["Core", "Gui"],
+                            "frameworks": ["AppKit", "Carbon", "CoreServices", "CoreVideo",
+                                           "IOKit", "IOSurface", "Metal", "QuartzCore"],
+                        }
+                    })
+                if self.settings.os == "Windows":
+                    windowsintegrationplugin_internal_deps = ["Core", "Gui"]
+                    windowsintegrationplugin_system_libs = ["advapi32", "dwmapi", "gdi32", "imm32", "ole32",
+                                                            "oleaut32", "shell32", "shlwapi", "user32", "winmm",
+                                                            "winspool", "wtsapi32"]
+                    if self.options.get_safe("opengl", "no") != "no":
+                        windowsintegrationplugin_internal_deps.append("OpenGL")
+                        if self.options.get_safe("opengl", "no") != "dynamic":
+                            windowsintegrationplugin_system_libs.append("opengl32")
+                    if self.settings.compiler == "gcc":
+                        windowsintegrationplugin_system_libs.append("uuid")
+                    plugins.update({
+                        "QWindowsIntegrationPlugin": {
+                            "libs": ["qwindows"],
+                            "type": "platforms",
+                            "internal_deps": windowsintegrationplugin_internal_deps,
+                            "system_libs": windowsintegrationplugin_system_libs,
+                        }
+                    })
+
+                ## imageformats plugins
+                plugins.update({
+                    "QICOPlugin": {
+                        "libs": ["qico"],
+                        "type": "imageformats",
+                        "internal_deps": ["Core", "Gui"],
+                    }
+                })
+                plugins.update({
+                    "QJpegPlugin": {
+                        "libs": ["qjpeg"],
+                        "type": "imageformats",
+                        "internal_deps": ["Core", "Gui"],
+                        "requires": jpeg(),
+                    }
+                })
+                plugins.update({
+                    "QGifPlugin": {
+                        "libs": ["qgif"],
+                        "type": "imageformats",
+                        "internal_deps": ["Core", "Gui"],
+                    }
+                })
+
+                # TODO: generic plugins
+
+                if self.options.widgets:
+                    ## Widgets
+                    widgets_system_libs = []
+                    widgets_frameworks = []
+                    if self.settings.os == "Windows":
+                        widgets_system_libs.extend(["dwmapi", "shell32", "uxtheme"])
+                    elif self.settings.os == "Macos":
+                        widgets_frameworks.extend(["AppKit"])
+                    modules.update({
+                        "Widgets": {
+                            "internal_deps": ["Core", "Gui"],
+                            "system_libs": widgets_system_libs,
+                            "frameworks": widgets_frameworks,
+                        }
+                    })
+
+                    # styles plugins
+                    if self.settings.os == "Android":
+                        plugins.update({
+                            "QAndroidStylePlugin": {
+                                "libs": ["qandroidstyle"],
+                                "type": "styles",
+                                "internal_deps": ["Core", "Gui", "Widgets"],
+                            }
+                        })
+                    if self.settings.os == "Macos":
+                        plugins.update({
+                            "QMacStylePlugin": {
+                                "libs": ["qmacstyle"],
+                                "type": "styles",
+                                "internal_deps": ["Core", "Gui", "Widgets"],
+                                "frameworks": ["AppKit"]
+                            }
+                        })
+                    if self.settings.os == "Windows":
+                        plugins.update({
+                            "QWindowsVistaStylePlugin": {
+                                "libs": ["qwindowsvistastyle"],
+                                "type": "styles",
+                                "internal_deps": ["Core", "Gui", "Widgets"],
+                                "system_libs": ["gdi32", "user32", "uxtheme"]
+                            }
+                        })
+
+                    ## PrintSupport
+                    printsupport_system_libs = []
+                    printsupport_frameworks = []
+                    if self.settings.os == "Windows":
+                        printsupport_system_libs.extend(["gdi32", "user32", "comdlg32", "winspool"])
+                    elif self.settings.os == "Macos":
+                        printsupport_frameworks.extend(["ApplicationServices", "AppKit"])
+                        printsupport_system_libs.extend(["cups"])
+                    modules.update({
+                        "PrintSupport": {
+                            "internal_deps": ["Core", "Gui", "Widgets"],
+                            "system_libs": printsupport_system_libs,
+                            "frameworks": printsupport_system_libs,
+                        }
+                    })
+
+                    # TODO: printsupport plugins
+
+                    ## OpenGLWidgets
+                    if self.options.get_safe("opengl", "no") != "no":
+                        modules.update({"OpenGLWidgets": {"internal_deps": ["OpenGL", "Widgets"]}})
+
+            # TODO: add missing modules: DeviceDiscoverySupport, FbSupport
+
+            ## sql plugins
+            if self.options.with_sqlite3:
+                plugins.update({
+                    "QSQLiteDriverPlugin": {
+                        "libs": ["qsqlite"],
+                        "type": "sqldrivers",
+                        "internal_deps": ["Core", "Sql"],
+                        "requires": ["sqlite3::sqlite3"],
+                    }
+                })
+            if self.options.with_pq:
+                plugins.update({
+                    "QPSQLDriverPlugin": {
+                        "libs": ["qsqlpsql"],
+                        "type": "sqldrivers",
+                        "internal_deps": ["Core", "Sql"],
+                        "requires": ["libpq::libpq"],
+                    }
+                })
+            if self.options.with_odbc:
+                # TODO: handle windows (odbc is a system lib on Windows)
+                if self.settings.os != "Windows":
+                    plugins.update({
+                        "QODBCDriverPlugin": {
+                            "libs": ["qsqlodbc"],
+                            "type": "sqldrivers",
+                            "internal_deps": ["Core", "Sql"],
+                            "requires": ["odbc::odbc"],
+                        }
+                    })
+
+            # qtsvg
+            if self.options.qtsvg:
+                if self.options.gui:
+                    modules.update({"Svg": {"internal_deps": ["Gui"]}})
+                    plugins.update({
+                        "QSvgIconPlugin": {"libs": ["qsvgicon"], "type": "iconengines", "internal_deps": ["Core", "Gui", "Svg"]},
+                        "QSvgPlugin": {"libs": ["qsvg"], "type": "imageformats", "internal_deps": ["Core", "Gui", "Svg"]},
+                    })
+                    if self.options.widgets:
+                        modules.update({"SvgWidgets": {"internal_deps": ["Core", "Gui", "Svg", "Widgets"]}})
+
+            # qtdeclarative
+            if self.options.qtdeclarative:
+                qml_system_libs = []
+                if self.settings.os == "Windows":
+                    qml_system_libs = ["shell32"]
+                elif self.settings.os in ["Linux", "FreeBSD"] and not self.options.shared:
+                    qml_system_libs = ["rt"]
+                modules.update({
+                    "Qml": {"internal_deps": ["Core", "Network"], "system_libs": qml_system_libs},
+                    "QmlModels": {"internal_deps": ["Core", "Qml"]},
+                    "QmlWorkerScript": {"internal_deps": ["Core", "Qml"]},
+                    "QmlLocalStorage": {"internal_deps": ["Core", "Qml", "Sql"]},
+                    "LabsSettings": {"internal_deps": ["Core", "Qml"]},
+                    "LabsQmlModels": {"internal_deps": ["Core", "Qml"]},
+                    "LabsFolderListModel": {"internal_deps": ["Qml", "QmlModels"]},
+                    "PacketProtocol": {"internal_deps": ["Core"]},
+                    "QmlDevTools": {"internal_deps": ["Core"]},
+                    "QmlDom": {"internal_deps": ["Core", "QmlDevTools"]},
+                    "QmlCompiler": {"internal_deps": ["Core", "QmlDevTools"]},
+                    "QmlDebug": {"internal_deps": ["Core", "Network", "PacketProtocol", "Qml"]},
+                })
+                plugins.update({
+                    "QQmlNativeDebugConnectorFactory": {"libs": ["qmldbg_native"], "type": "qmltooling", "internal_deps": ["Core", "PacketProtocol", "Qml"]},
+                    "QDebugMessageServiceFactory": {"libs": ["qmldbg_messages"], "type": "qmltooling", "internal_deps": ["Core", "PacketProtocol", "Qml"]},
+                    "QQmlProfilerServiceFactory": {"libs": ["qmldbg_profiler"], "type": "qmltooling", "internal_deps": ["Core", "PacketProtocol", "Qml"]},
+                    "QQmlDebuggerServiceFactory": {"libs": ["qmldbg_debugger"], "type": "qmltooling", "internal_deps": ["Core", "PacketProtocol", "Qml"]},
+                    "QQmlNativeDebugServiceFactory": {"libs": ["qmldbg_nativedebugger"], "type": "qmltooling", "internal_deps": ["Core", "PacketProtocol", "Qml"]},
+                    "QQmlDebugServerFactory": {"libs": ["qmldbg_server"], "type": "qmltooling", "internal_deps": ["PacketProtocol", "Qml"]},
+                    "QTcpServerConnectionFactory": {"libs": ["qmldbg_tcp"], "type": "qmltooling", "internal_deps": ["Network", "Qml"]},
+                    "QLocalClientConnectionFactory": {"libs": ["qmldbg_local"], "type": "qmltooling", "internal_deps": ["Qml"]},
+                })
+                if self.options.gui:
+                    quick_internal_deps = ["Core", "Gui", "Qml", "QmlModels", "Network"]
+                    if self.options.get_safe("opengl", "no") != "no":
+                        quick_internal_deps.append("OpenGL")
+                    quick_system_libs = []
+                    if self.settings.os == "Windows":
+                        quick_system_libs = ["user32"]
+                    modules.update({
+                        "Quick": {"internal_deps": quick_internal_deps, "system_libs": quick_system_libs},
+                        "QuickShapes": {"internal_deps": ["Core", "Gui", "Qml", "Quick"]},
+                        "QuickLayouts": {"internal_deps": ["Core", "Gui", "Qml", "Quick"]},
+                        "QuickTest": {"internal_deps": ["Core", "Gui", "Qml", "Quick", "Test"]},
+                        "QuickParticles": {"internal_deps": ["Core", "Gui", "Qml", "Quick"]},
+                        "LabsAnimation": {"internal_deps": ["Qml", "Quick"]},
+                        "LabsWavefrontMesh": {"internal_deps": ["Core", "Gui", "Quick"]},
+                        "LabsSharedImage": {"internal_deps": ["Core", "Gui", "Quick"]},
+                    })
+                    plugins.update({
+                        "QQmlInspectorServiceFactory": {"libs": ["qmldbg_inspector"], "type": "qmltooling", "internal_deps": ["Core", "Gui", "PacketProtocol", "Qml", "Quick"]},
+                        "QQuickProfilerAdapterFactory": {"libs": ["qmldbg_quickprofiler"], "type": "qmltooling", "internal_deps": ["Core", "Gui", "PacketProtocol", "Qml", "Quick"]},
+                        "QQmlPreviewServiceFactory": {"libs": ["qmldbg_preview"], "type": "qmltooling", "internal_deps": ["Core", "Gui", "Network", "PacketProtocol", "Qml", "Quick"]},
+                    })
+                    if self.options.widgets:
+                        quickwidgets_internal_deps = ["Core", "Gui", "Qml", "Quick", "Widgets"]
+                        if self.options.get_safe("opengl", "no") != "no":
+                            quickwidgets_internal_deps.append("OpenGL")
+                        modules.update({"QuickWidgets": {"internal_deps": quickwidgets_internal_deps}})
+
+            # qtactiveqt (WIP)
+            if self.options.qtactiveqt:
+                if self.options.gui and self.options.widgets:
+                    modules.update({
+                        "AxBase": {"internal_deps": ["Gui", "Widgets"]},
+                        "AxServer": {"internal_deps": ["AxBase"]},
+                        "AxContainer": {"internal_deps": ["AxBase"]},
+                    })
+
+            # qttools (WIP)
+            if self.options.qttools:
+                if self.options.gui and self.options.widgets:
+                    modules.update({
+                        "UiPlugin": {"internal_deps": ["Gui", "Widgets"]},
+                        "UiTools": {"internal_deps": ["UiPlugin", "Gui", "Widgets"]},
+                        "Designer": {"internal_deps": ["Gui", "UiPlugin", "Widgets", "Xml"]},
+                        "Help": {"internal_deps": ["Gui", "Sql", "Widgets"]},
+                    })
+
+            # TODO: qttranslations?
+
+            # TODO: qtdoc?
+
+            # qtwayland (WIP)
+            if self.options.get_safe("qtwayland"):
+                if self.options.gui:
+                    modules.update({
+                        "WaylandClient": {"internal_deps": ["Gui"], "requires": ["wayland::wayland-client"]},
+                        "WaylandCompositor": {"internal_deps": ["Gui"], "requires": ["wayland::wayland-client"]},
+                    })
+
+            # qt3d (WIP)
+            if self.options.qt3d:
+                if self.options.gui:
+                    modules.update({
+                        "3DCore": {"internal_deps": ["Gui", "Network"]},
+                        "3DInput": {"internal_deps": ["3DCore", "Gui"]},
+                        "3DLogic": {"internal_deps": ["3DCore", "Gui"]},
+                    })
+                    if self.options.get_safe("opengl", "no") != "no":
+                        modules.update({
+                            "3DRender": {"internal_deps": ["3DCore", "OpenGL"]},
+                            "3DAnimation": {"internal_deps": ["3DCore", "3DRender", "Gui"]},
+                            "3DExtras": {"internal_deps": ["Gui", "3DCore", "3DInput", "3DLogic", "3DRender"]},
+                        })
+                    if self.options.qtdeclarative:
+                        modules.update({
+                            "3DQuick": {"internal_deps": ["3DCore", "Gui", "Qml", "Quick"]},
+                            "3DQuickInput": {"internal_deps": ["3DCore", "3DInput", "3DQuick", "Gui", "Qml"]},
+                        })
+                    if self.options.get_safe("opengl", "no") != "no" and self.options.qtdeclarative:
+                        modules.update({
+                            "3DQuickAnimation": {"internal_deps": ["3DAnimation", "3DCore", "3DQuick", "3DRender", "Gui", "Qml"]},
+                            "3DQuickExtras": {"internal_deps": ["3DCore", "3DExtras", "3DInput", "3DQuick", "3DRender", "Gui", "Qml"]},
+                            "3DQuickRender": {"internal_deps": ["3DCore", "3DQuick", "3DRender", "Gui", "Qml"]},
+                            "3DQuickScene2D": {"internal_deps": ["3DCore", "3DQuick", "3DRender", "Gui", "Qml"]},
+                        })
+
+                _create_plugin("DefaultGeometryLoaderPlugin", "defaultgeometryloader", "geometryloaders", ["3DCore", "3DRender", "Gui"])
+                _create_plugin("fbxGeometryLoaderPlugin", "fbxgeometryloader", "geometryloaders", ["3DCore", "3DRender", "Gui"])
+
+            # qtimageformats
+            if self.options.qtimageformats:
+                if self.options.gui:
+                    plugins.update({
+                        "QTgaPlugin": {"libs": ["qtga"], "type": "imageformats", "internal_deps": ["Core", "Gui"]},
+                        "QWbmpPlugin": {"libs": ["qwbmp"], "type": "imageformats", "internal_deps": ["Core", "Gui"]},
+                        "QTiffPlugin": {"libs": ["qtiff"], "type": "imageformats", "internal_deps": ["Core", "Gui"], "requires": ["libtiff::libtiff"]},
+                        "QWebpPlugin": {"libs": ["qwebp"], "type": "imageformats", "internal_deps": ["Core", "Gui"], "requires": ["libwebp::libwebp"]},
+                        "QICNSPlugin": {"libs": ["qicns"], "type": "imageformats", "internal_deps": ["Core", "Gui"]},
+                        # TODO: eventually add an option for Apple OS: if jasper is not used, QMacJp2Plugin is created instead
+                        "QJp2Plugin": {"libs": ["qjp2"], "type": "imageformats", "internal_deps": ["Core", "Gui"], "requires": ["jasper::jasper"]},
+                    })
+                    if tools.is_apple_os(self.settings.os):
+                        plugins.update({
+                            "QMacHeifPlugin": {
+                                "libs": ["qmacheif"],
+                                "type": "imageformats",
+                                "internal_deps": ["Core", "Gui"],
+                                "frameworks": ["CoreFoundation", "CoreGraphics", "ImageIO"],
+                            }
+                        })
+
+            # qtquickcontrols2
+            if self.options.qtquickcontrols2:
+                if self.options.gui and self.options.qtdeclarative:
+                    modules.update({
+                        "QuickTemplates2": {"internal_deps": ["Core", "Gui", "Qml", "Quick", "QmlModels"]},
+                        "QuickControls2": {"internal_deps": ["Core", "Gui", "Qml", "Quick", "QuickTemplates2"]},
+                        "QuickControls2Impl": {"internal_deps": ["Core", "Gui", "Qml", "Quick", "QuickTemplates2"]},
+                    })
+
+            # qtcharts
+            if self.options.qtcharts:
+                if self.options.gui and self.options.widgets:
+                    charts_internal_deps = ["Core", "Gui", "Widgets"]
+                    if self.options.get_safe("opengl", "no") != "no":
+                        charts_internal_deps.extend(["OpenGL", "OpenGLWidgets"])
+                    charts_system_libs = []
+                    if self.settings.os == "Windows":
+                        charts_system_libs.append("user32")
+                    modules.update({"Charts": {"internal_deps": charts_internal_deps, "system_libs": charts_system_libs}})
+
+            # qtdatavis3d (WIP)
+            if self.options.qtdatavis3d:
+                if self.options.gui and self.options.get_safe("opengl", "no") != "no" and self.options.qtdeclarative:
+                    modules.update({"DataVisualization": {"internal_deps": ["Gui", "OpenGL", "Qml", "Quick"]}})
+
+            # qtvirtualkeyboard (WIP)
+            if self.options.qtvirtualkeyboard:
+                if self.options.gui and self.options.qtdeclarative:
+                    modules.update({"VirtualKeyboard": {"internal_deps": ["Gui", "Qml", "Quick"]}})
+
+                _create_plugin("QVirtualKeyboardPlugin", "qtvirtualkeyboardplugin", "platforminputcontexts", ["Gui", "Qml", "VirtualKeyboard"])
+                _create_plugin("QtVirtualKeyboardHangulPlugin", "qtvirtualkeyboard_hangul", "virtualkeyboard", ["Gui", "Qml", "VirtualKeyboard"])
+                _create_plugin("QtVirtualKeyboardMyScriptPlugin", "qtvirtualkeyboard_myscript", "virtualkeyboard", ["Gui", "Qml", "VirtualKeyboard"])
+                _create_plugin("QtVirtualKeyboardThaiPlugin", "qtvirtualkeyboard_thai", "virtualkeyboard", ["Gui", "Qml", "VirtualKeyboard"])
+
+            # qtscxml (WIP)
+            if self.options.qtscxml:
+                modules.update({"StateMachine": {}})
+                modules.update({"Scxml": {}})
+                if self.options.qtdeclarative:
+                    modules.update({"StateMachineQml": {"internal_deps": ["StateMachine", "Qml"]}})
+                    modules.update({"ScxmlQml": {"internal_deps": ["Scxml", "Qml"]}})
+
+                _create_plugin("QScxmlEcmaScriptDataModelPlugin", "qscxmlecmascriptdatamodel", "scxmldatamodel", ["Scxml", "Qml"])
+
+            # qtnetworkauth (WIP)
+            if self.options.qtnetworkauth:
+                modules.update({"NetworkAuth": {"internal_deps": ["Network"]}})
+
+            # qtlottie (WIP)
+            if self.options.qtlottie:
+                if self.options.gui:
+                    modules.update({"Bodymovin": {"internal_deps": ["Gui"]}})
+
+            # TODO: qtquicktimeline?
+
+            # qtquick3d (WIP)
+            if self.options.qtquick3d:
+                if self.options.gui:
+                    modules.update({"Quick3DUtils": {"internal_deps": ["Gui"]}})
+                    if self.options.qtdeclarative:
+                        modules.update({"Quick3DAssetImport": {"internal_deps": ["Gui", "Qml", "Quick3DUtils"]}})
+                        if self.options.qtshadertools:
+                            modules.update({
+                                "Quick3DRuntimeRender": {"internal_deps": ["Gui", "Quick", "Quick3DAssetImport", "Quick3DUtils", "ShaderTools"]},
+                                "Quick3D": {"internal_deps": ["Gui", "Qml", "Quick", "Quick3DRuntimeRender"]},
+                            })
+
+            # qtshadertools (WIP)
+            if self.options.qtshadertools:
+                if self.options.gui:
+                    modules.update({"ShaderTools": {"internal_deps": ["Gui"]}})
+
+            # qt5compat (WIP)
+            if self.options.qt5compat:
+                modules.update({"Core5Compat": {}})
+
+            # qtcoap (WIP)
+            if self.options.get_safe("qtcoap"):
+                modules.update({"Coap": {"internal_deps": ["Network"]}})
+
+            # qtmqtt (WIP)
+            if self.options.get_safe("qtmqtt"):
+                modules.update({"Mqtt": {"internal_deps": ["Network"]}})
+
+            # qtopcua (WIP)
+            if self.options.get_safe("qtopcua"):
+                modules.update({"OpcUa": {"internal_deps": ["Network"]}})
+
+                _create_plugin("QOpen62541Plugin", "open62541_backend", "opcua", ["Network", "OpcUa"])
+                _create_plugin("QUACppPlugin", "uacpp_backend", "opcua", ["Network", "OpcUa"])
+
+            return {
+                "modules": modules,
+                "plugins": plugins,
+            }
+
+
         if tools.Version(self.version) < "6.1.0":
             self.cpp_info.components["qtCore"].libs.append("Qt6Core_qobject%s" % libsuffix)
-        if self.options.gui:
-            gui_reqs = ["DBus"]
-            if self.options.with_freetype:
-                gui_reqs.append("freetype::freetype")
-            if self.options.with_libpng:
-                gui_reqs.append("libpng::libpng")
-            if self.options.get_safe("with_fontconfig", False):
-                gui_reqs.append("fontconfig::fontconfig")
-            if self.settings.os in ["Linux", "FreeBSD"]:
-                gui_reqs.append("xorg::xorg")
-                if not tools.cross_building(self, skip_x64_x86=True):
-                    gui_reqs.append("xkbcommon::xkbcommon")
-            if self.settings.os != "Windows" and self.options.get_safe("opengl", "no") != "no":
-                gui_reqs.append("opengl::opengl")
-            if self.options.with_harfbuzz:
-                gui_reqs.append("harfbuzz::harfbuzz")
-            if self.options.with_libjpeg == "libjpeg-turbo":
-                gui_reqs.append("libjpeg-turbo::libjpeg-turbo")
-            if self.options.with_libjpeg == "libjpeg":
-                gui_reqs.append("libjpeg::libjpeg")
-            _create_module("Gui", gui_reqs)
-        if self.options.with_sqlite3:
-            _create_plugin("QSQLiteDriverPlugin", "qsqlite", "sqldrivers", ["sqlite3::sqlite3"])
-        if self.options.with_pq:
-            _create_plugin("QPSQLDriverPlugin", "qsqlpsql", "sqldrivers", ["libpq::libpq"])
-        if self.options.with_odbc:
-            if self.settings.os != "Windows":
-                _create_plugin("QODBCDriverPlugin", "qsqlodbc", "sqldrivers", ["odbc::odbc"])
-        networkReqs = []
-        if self.options.openssl:
-            networkReqs.append("openssl::openssl")
-        if self.options.with_brotli:
-            networkReqs.append("brotli::brotli")
-        _create_module("Network", networkReqs)
-        _create_module("Sql")
-        _create_module("Test")
-        if self.options.widgets:
-            _create_module("Widgets", ["Gui"])
-        if self.options.gui and self.options.widgets:
-            _create_module("PrintSupport", ["Gui", "Widgets"])
-        if self.options.get_safe("opengl", "no") != "no" and self.options.gui:
-            _create_module("OpenGL", ["Gui"])
-        if self.options.widgets and self.options.get_safe("opengl", "no") != "no":
-            _create_module("OpenGLWidgets", ["OpenGL", "Widgets"])
-        _create_module("DBus")
-        _create_module("Concurrent")
-        _create_module("Xml")
-
-        if self.options.qt5compat:
-            _create_module("Core5Compat")
 
         if self.options.qtdeclarative:
-            _create_module("Qml", ["Network"])
             self.cpp_info.components["qtQml"].build_modules["cmake_find_package"].append(self._cmake_qt6_private_file("Qml"))
             self.cpp_info.components["qtQml"].build_modules["cmake_find_package_multi"].append(self._cmake_qt6_private_file("Qml"))
-            _create_module("QmlModels", ["Qml"])
             self.cpp_info.components["qtQmlImportScanner"].names["cmake_find_package"] = "QmlImportScanner" # this is an alias for Qml and there to integrate with existing consumers
             self.cpp_info.components["qtQmlImportScanner"].names["cmake_find_package_multi"] = "QmlImportScanner"
             self.cpp_info.components["qtQmlImportScanner"].requires = _get_corrected_reqs(["Qml"])
-            if self.options.gui:
-                _create_module("Quick", ["Gui", "Qml", "QmlModels"])
-                if self.options.widgets:
-                    _create_module("QuickWidgets", ["Gui", "Qml", "Quick", "Widgets"])
-                _create_module("QuickShapes", ["Gui", "Qml", "Quick"])
-            _create_module("QmlWorkerScript", ["Qml"])
-            _create_module("QuickTest", ["Test"])
 
         if self.options.qttools and self.options.gui and self.options.widgets:
-            _create_module("UiPlugin", ["Gui", "Widgets"])
             self.cpp_info.components["qtUiPlugin"].libs = [] # this is a collection of abstract classes, so this is header-only
             self.cpp_info.components["qtUiPlugin"].libdirs = []
-            _create_module("UiTools", ["UiPlugin", "Gui", "Widgets"])
-            _create_module("Designer", ["Gui", "UiPlugin", "Widgets", "Xml"])
-            _create_module("Help", ["Gui", "Sql", "Widgets"])
 
-        if self.options.qtquick3d and self.options.gui:
-            _create_module("Quick3DUtils", ["Gui"])
-            _create_module("Quick3DAssetImport", ["Gui", "Qml", "Quick3DUtils"])
-            _create_module("Quick3DRuntimeRender", ["Gui", "Quick", "Quick3DAssetImport", "Quick3DUtils", "ShaderTools"])
-            _create_module("Quick3D", ["Gui", "Qml", "Quick", "Quick3DRuntimeRender"])
-
-        if self.options.qtquickcontrols2 and self.options.gui:
-            _create_module("QuickControls2", ["Gui", "Quick"])
-            _create_module("QuickTemplates2", ["Gui", "Quick"])
-
-        if self.options.qtshadertools and self.options.gui:
-            _create_module("ShaderTools", ["Gui"])
-
-        if self.options.qtsvg and self.options.gui:
-            _create_module("Svg", ["Gui"])
-            if self.options.widgets:
-                _create_module("SvgWidgets", ["Gui", "Svg", "Widgets"])
-
-        if self.options.qtwayland and self.options.gui:
-            _create_module("WaylandClient", ["Gui", "wayland::wayland-client"])
-            _create_module("WaylandCompositor", ["Gui", "wayland::wayland-server"])
-
-        if self.options.get_safe("qtactiveqt"):
-            _create_module("AxBase", ["Gui", "Widgets"])
-            _create_module("AxServer", ["AxBase"])
+        if self.options.qtactiveqt and self.options.gui and self.options.widgets:
             self.cpp_info.components["qtAxServer"].system_libs.append("shell32")
             self.cpp_info.components["qtAxServer"].defines.append("QAXSERVER")
-            _create_module("AxContainer", ["AxBase"])
-        if self.options.get_safe("qtcharts"):
-            _create_module("Charts", ["Gui", "Widgets"])
-        if self.options.get_safe("qtdatavis3d"):
-            _create_module("DataVisualization", ["Gui", "OpenGL", "Qml", "Quick"])
-        if self.options.get_safe("qtlottie"):
-            _create_module("Bodymovin", ["Gui"])
-        if self.options.get_safe("qtscxml"):
-            _create_module("StateMachine")
-            _create_module("StateMachineQml", ["StateMachine", "Qml"])
-            _create_module("Scxml")
-            _create_plugin("QScxmlEcmaScriptDataModelPlugin", "qscxmlecmascriptdatamodel", "scxmldatamodel", ["Scxml", "Qml"])
-            _create_module("ScxmlQml", ["Scxml", "Qml"])
-        if self.options.get_safe("qtvirtualkeyboard"):
-            _create_module("VirtualKeyboard", ["Gui", "Qml", "Quick"])
-            _create_plugin("QVirtualKeyboardPlugin", "qtvirtualkeyboardplugin", "platforminputcontexts", ["Gui", "Qml", "VirtualKeyboard"])
-            _create_plugin("QtVirtualKeyboardHangulPlugin", "qtvirtualkeyboard_hangul", "virtualkeyboard", ["Gui", "Qml", "VirtualKeyboard"])
-            _create_plugin("QtVirtualKeyboardMyScriptPlugin", "qtvirtualkeyboard_myscript", "virtualkeyboard", ["Gui", "Qml", "VirtualKeyboard"])
-            _create_plugin("QtVirtualKeyboardThaiPlugin", "qtvirtualkeyboard_thai", "virtualkeyboard", ["Gui", "Qml", "VirtualKeyboard"])
-        if self.options.get_safe("qt3d"):
-            _create_module("3DCore", ["Gui", "Network"])
-            _create_module("3DRender", ["3DCore", "OpenGL"])
-            _create_module("3DAnimation", ["3DCore", "3DRender", "Gui"])
-            _create_module("3DInput", ["3DCore", "Gui"])
-            _create_module("3DLogic", ["3DCore", "Gui"])
-            _create_module("3DExtras", ["Gui", "3DCore", "3DInput", "3DLogic", "3DRender"])
-            _create_plugin("DefaultGeometryLoaderPlugin", "defaultgeometryloader", "geometryloaders", ["3DCore", "3DRender", "Gui"])
-            _create_plugin("fbxGeometryLoaderPlugin", "fbxgeometryloader", "geometryloaders", ["3DCore", "3DRender", "Gui"])
-            _create_module("3DQuick", ["3DCore", "Gui", "Qml", "Quick"])
-            _create_module("3DQuickAnimation", ["3DAnimation", "3DCore", "3DQuick", "3DRender", "Gui", "Qml"])
-            _create_module("3DQuickExtras", ["3DCore", "3DExtras", "3DInput", "3DQuick", "3DRender", "Gui", "Qml"])
-            _create_module("3DQuickInput", ["3DCore", "3DInput", "3DQuick", "Gui", "Qml"])
-            _create_module("3DQuickRender", ["3DCore", "3DQuick", "3DRender", "Gui", "Qml"])
-            _create_module("3DQuickScene2D", ["3DCore", "3DQuick", "3DRender", "Gui", "Qml"])
-        if self.options.get_safe("qtimageformats"):
-            _create_plugin("ICNSPlugin", "qicns", "imageformats", ["Gui"])
-            _create_plugin("QJp2Plugin", "qjp2", "imageformats", ["Gui"])
-            _create_plugin("QMacHeifPlugin", "qmacheif", "imageformats", ["Gui"])
-            _create_plugin("QMacJp2Plugin", "qmacjp2", "imageformats", ["Gui"])
-            _create_plugin("QMngPlugin", "qmng", "imageformats", ["Gui"])
-            _create_plugin("QTgaPlugin", "qtga", "imageformats", ["Gui"])
-            _create_plugin("QTiffPlugin", "qtiff", "imageformats", ["Gui"])
-            _create_plugin("QWbmpPlugin", "qwbmp", "imageformats", ["Gui"])
-            _create_plugin("QWebpPlugin", "qwebp", "imageformats", ["Gui"])
-        if self.options.get_safe("qtnetworkauth"):
-            _create_module("NetworkAuth", ["Network"])
-        if self.options.get_safe("qtcoap"):
-            _create_module("Coap", ["Network"])
-        if self.options.get_safe("qtmqtt"):
-            _create_module("Mqtt", ["Network"])
-        if self.options.get_safe("qtopcua"):
-            _create_module("OpcUa", ["Network"])
-            _create_plugin("QOpen62541Plugin", "open62541_backend", "opcua", ["Network", "OpcUa"])
-            _create_plugin("QUACppPlugin", "uacpp_backend", "opcua", ["Network", "OpcUa"])
 
         if self.settings.os != "Windows":
             self.cpp_info.components["qtCore"].cxxflags.append("-fPIC")
-
-        if not self.options.shared:
-            if self.settings.os == "Windows":
-                self.cpp_info.components["qtCore"].system_libs.append("version")  # qtcore requires "GetFileVersionInfoW" and "VerQueryValueW" which are in "Version.lib" library
-                self.cpp_info.components["qtCore"].system_libs.append("winmm")    # qtcore requires "__imp_timeSetEvent" which is in "Winmm.lib" library
-                self.cpp_info.components["qtCore"].system_libs.append("netapi32") # qtcore requires "NetApiBufferFree" which is in "Netapi32.lib" library
-                self.cpp_info.components["qtCore"].system_libs.append("userenv")  # qtcore requires "__imp_GetUserProfileDirectoryW " which is in "UserEnv.Lib" library
-                self.cpp_info.components["qtCore"].system_libs.append("ws2_32")  # qtcore requires "WSAStartup " which is in "Ws2_32.Lib" library
-                self.cpp_info.components["qtNetwork"].system_libs.append("dnsapi")  # qtnetwork from qtbase requires "DnsFree" which is in "Dnsapi.lib" library
-                self.cpp_info.components["qtNetwork"].system_libs.append("iphlpapi")
-
-
-            if self.settings.os == "Macos":
-                self.cpp_info.components["qtCore"].frameworks.append("IOKit")     # qtcore requires "_IORegistryEntryCreateCFProperty", "_IOServiceGetMatchingService" and much more which are in "IOKit" framework
-                self.cpp_info.components["qtCore"].frameworks.append("Cocoa")     # qtcore requires "_OBJC_CLASS_$_NSApplication" and more, which are in "Cocoa" framework
-                self.cpp_info.components["qtCore"].frameworks.append("Security")  # qtcore requires "_SecRequirementCreateWithString" and more, which are in "Security" framework
-                self.cpp_info.components["qtNetwork"].frameworks.append("SystemConfiguration")
-                self.cpp_info.components["qtNetwork"].frameworks.append("GSS")
 
         self.cpp_info.components["qtCore"].builddirs.append(os.path.join("res","archdatadir","bin"))
         self.cpp_info.components["qtCore"].build_modules["cmake_find_package"].append(self._cmake_executables_file)
