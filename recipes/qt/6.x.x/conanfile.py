@@ -718,579 +718,43 @@ class QtConan(ConanFile):
                 requires.append("Core")
             self.cpp_info.components[componentname].requires = _get_corrected_reqs(requires)
 
+        modules = self._qtbase_components["modules"]
+        plugins = self._qtbase_components["plugins"]
+        if self.options.qtsvg:
+            modules.update(self._qtsvg_components["modules"])
+            plugins.update(self._qtsvg_components["plugins"])
+        if self.options.qtdeclarative:
+            modules.update(self._qtdeclarative_components["modules"])
+            plugins.update(self._qtdeclarative_components["plugins"])
+        if self.options.qtactiveqt:
+            modules.update(self._qtactiveqt_components["modules"])
+            plugins.update(self._qtactiveqt_components["plugins"])
+        if self.options.qttools:
+            modules.update(self._qttools_components["modules"])
+            plugins.update(self._qttools_components["plugins"])
+        if self.options.get_safe("qtwayland"):
+            modules.update(self._qtwayland_components["modules"])
+            plugins.update(self._qtwayland_components["plugins"])
+        if self.options.qt3d:
+            modules.update(self._qt3d_components["modules"])
+            plugins.update(self._qt3d_components["plugins"])
+        if self.options.qtimageformats:
+            modules.update(self._qtimageformats_components["modules"])
+            plugins.update(self._qtimageformats_components["plugins"])
+        if self.options.qtquickcontrols2:
+            modules.update(self._qtquickcontrols2_components["modules"])
+            plugins.update(self._qtquickcontrols2_components["plugins"])
+        if self.options.qtcharts:
+            modules.update(self._qtcharts_components["modules"])
+            plugins.update(self._qtcharts_components["plugins"])
+
         def _components():
-            def pcre2():
-                return ["pcre2::pcre2"] if self.options.with_pcre2 else []
-
-            def doubleconversion():
-                return ["double-conversion::double-conversion"] if self.options.with_doubleconversion and not self.options.multiconfiguration else []
-
-            def glib():
-                return ["glib::glib"] if self.options.with_glib else []
-
-            def icu():
-                return ["icu::icu"] if self.options.get_safe("with_icu") else []
-
-            def zstd():
-                return ["zstd::zstd"] if self.options.with_zstd else []
-
-            def freetype():
-                return ["freetype::freetype"] if self.options.with_freetype else []
-
-            def png():
-                return ["libpng::libpng"] if self.options.with_libpng else []
-
-            def fontconfig():
-                return ["fontconfig::fontconfig"] if self.options.get_safe("with_fontconfig") else []
-
-            def xorg():
-                xorg = []
-                if self.settings.os in ["Linux", "FreeBSD"]:
-                    xorg.append("xorg::xorg")
-                    if not tools.cross_building(self, skip_x64_x86=True):
-                        xorg.append("xkbcommon::xkbcommon")
-                return xorg
-
-            def opengl():
-                return ["opengl::opengl"] if self.settings.os != "Windows" and self.options.get_safe("opengl", "no") != "no" else []
-
-            def harfbuzz():
-                return ["harfbuzz::harfbuzz"] if self.options.with_harfbuzz else []
-
-            def jpeg():
-                if self.options.with_libjpeg == "libjpeg-turbo":
-                    return ["libjpeg-turbo::libjpeg-turbo"]
-                elif self.options.with_libjpeg == "libjpeg":
-                    return ["libjpeg::libjpeg"]
-                return []
-
-            def vulkan():
-                return ["vulkan-loader::vulkan-loader"] if self.options.get_safe("with_vulkan") else []
-
-            def openssl():
-                return ["openssl::openssl"] if self.options.openssl else []
-
-            def brotli():
-                return ["brotli::brotli"] if self.options.with_brotli else []
-
             modules = {}
             plugins = {}
-
-            # qtbase
-            ## Core
-            core_system_libs = []
-            core_frameworks = []
-            if self.settings.os == "Windows":
-                core_system_libs.extend(["advapi32", "netapi32", "ole32", "shell32", "user32",
-                                         "uuid", "version", "winmm", "ws2_32", "mpr", "userenv"])
-            elif self.settings.os in ["Linux", "FreeBSD"]:
-                core_system_libs.extend(["m", "dl", "pthread"])
-            elif tools.is_apple_os(self.settings.os):
-                core_frameworks.extend(["CoreFoundation", "Foundation"])
-                if self.settings.os == "Macos":
-                    core_frameworks.extend(["AppKit", "ApplicationServices", "CoreServices",
-                                            "Security", "DiskArbitration", "IOKit"])
-                elif self.settings.os in ["iOS", "tvOS"]:
-                    core_frameworks.append("UIKit")
-                elif self.settings.os == "watchOS":
-                    core_frameworks.append("WatchKit")
-            modules.update({
-                "Core": {
-                    "requires": ["zlib::zlib"] + pcre2() + doubleconversion() + glib() + icu() + zstd(),
-                    "system_libs": core_system_libs,
-                    "frameworks": core_frameworks,
-                }
-            })
-            ## Concurrent
-            modules.update({"Concurrent": {"requires": ["Core"]}})
-            ## Sql
-            modules.update({"Sql": {"requires": ["Core"]}})
-            ## Network
-            network_system_libs = []
-            network_frameworks = []
-            if self.settings.os == "Windows":
-                network_system_libs.extend(["advapi32", "dnsapi", "iphlpapi"])
-                # which condition?
-                # network_system_libs.extend(["Crypt32", "Secur32", "bcrypt", "ncrypt"])
-            elif self.settings.os in ["Linux", "FreeBSD"]:
-                network_system_libs.extend(["dl"])
-            elif tools.is_apple_os(self.settings.os):
-                if self.settings.os == "Macos":
-                    network_frameworks.extend(["CoreServices", "GSS"])
-                if self.settings.os in ["Macos", "iOS"]:
-                    network_frameworks.append("SystemConfiguration")
-            modules.update({
-                "Network": {
-                    "requires": ["Core", "zlib::zlib"] + openssl() + brotli() + zstd(),
-                    "system_libs": network_system_libs,
-                    "frameworks": network_frameworks,
-                }
-            })
-            ## Xml
-            modules.update({"Xml": {"requires": ["Core"]}})
-            ## DBus
-            dbus_system_libs = []
-            if self.settings.os == "Windows":
-                dbus_system_libs.extend(["advapi32", "netapi32", "user32", "ws2_32"])
-            modules.update({"DBus": {"requires": ["Core"], "system_libs": dbus_system_libs}})
-            ## Test
-            test_frameworks = []
-            if tools.is_apple_os(self.settings.os):
-                test_frameworks.append("Security")
-                if self.settings.os == "Macos":
-                    test_frameworks.extend(["AppKit", "ApplicationServices", "Foundation", "IOKit"])
-            modules.update({"Test": {"requires": ["Core"], "frameworks": test_frameworks}})
-
-            if self.options.gui:
-                ## Gui
-                gui_system_libs = []
-                gui_frameworks = []
-                if self.settings.os == "Windows":
-                    gui_system_libs.extend(["advapi32", "gdi32", "ole32", "shell32",
-                                            "user32", "d3d11", "dxgi", "dxguid"])
-                    # which condition?
-                    # gui_system_libs.extend(["d2d1", "dwrite", "uuid"])
-                    if self.settings.compiler == "gcc":
-                        gui_system_libs.append("uuid")
-                elif self.settings.os in ["Linux", "FreeBSD"]:
-                    gui_system_libs.append("dl")
-                elif tools.is_apple_os(self.settings.os):
-                    gui_frameworks.extend(["CoreServices", "CoreGraphics", "CoreText", "Foundation", "ImageIO"])
-                    if self.settings.os == "Macos":
-                        gui_frameworks.extend(["AppKit", "Carbon"])
-                    if self.settings.os in ["Macos", "iOS"]:
-                        gui_frameworks.append("Metal")
-                    if self.settings.os != "Macos":
-                        gui_frameworks.append("UIKit")
-                modules.update({
-                    "Gui": {
-                        "requires": ["Core", "DBus", "zlib::zlib"] + freetype() + png() + fontconfig() +
-                                     xorg() + opengl() + harfbuzz() + jpeg() + vulkan() + glib(),
-                        "system_libs": gui_system_libs,
-                        "frameworks": gui_frameworks,
-                    }
-                })
-                ## OpenGL
-                if self.options.get_safe("opengl", "no") != "no":
-                    modules.update({"OpenGL": {"requires": ["Core", "Gui"] + vulkan()}})
-
-                ## platforms plugins
-                if self.settings.os == "Android":
-                    # TODO: should link to EGL also
-                    plugins.update({
-                        "QAndroidIntegrationPlugin": {
-                            "libs": ["qtforandroid"],
-                            "type": "platforms",
-                            "requires": ["Core", "Gui"],
-                            "system_libs": ["android", "jnigraphics"],
-                        }
-                    })
-                else:
-                    plugins.update({
-                        "QMinimalIntegrationPlugin": {
-                            "libs": ["qminimal"],
-                            "type": "platforms",
-                            "requires": ["Core", "Gui"] + freetype(),
-                        }
-                    })
-                    if self.options.get_safe("with_fontconfig"):
-                        plugins.update({
-                            "QOffscreenIntegrationPlugin": {
-                                "libs": ["qoffscreen"],
-                                "type": "platforms",
-                                "requires": ["Core", "Gui"] + xorg(),
-                            }
-                        })
-                if self.settings.os in ["Linux", "FreeBSD"]:
-                    # TODO: depends on Qt::XcbQpaPrivate
-                    plugins.update({
-                        "QXcbIntegrationPlugin": {
-                            "libs": ["qxcb"],
-                            "type": "platforms",
-                            "requires": ["Core", "Gui"],
-                        }
-                    })
-                    # TODO: more plugins for xcb
-                if self.settings.os in ["iOS", "tvOS"]:
-                    iosintegrationplugin_frameworks = ["AudioToolbox", "Foundation", "Metal", "QuartzCore", "UIKit"]
-                    if self.settings.os != "tvOS":
-                        iosintegrationplugin_frameworks.append("AssetsLibrary")
-                    plugins.update({
-                        "QIOSIntegrationPlugin": {
-                            "libs": ["qios"],
-                            "type": "platforms",
-                            "requires": ["Core", "Gui"] + opengl(),
-                            "frameworks": iosintegrationplugin_frameworks,
-                        }
-                    })
-                if self.settings.os == "Macos":
-                    plugins.update({
-                        "QCocoaIntegrationPlugin": {
-                            "libs": ["qcocoa"],
-                            "type": "platforms",
-                            "requires": ["Core", "Gui"],
-                            "frameworks": ["AppKit", "Carbon", "CoreServices", "CoreVideo",
-                                           "IOKit", "IOSurface", "Metal", "QuartzCore"],
-                        }
-                    })
-                if self.settings.os == "Windows":
-                    windowsintegrationplugin_requires = ["Core", "Gui"]
-                    windowsintegrationplugin_system_libs = ["advapi32", "dwmapi", "gdi32", "imm32", "ole32",
-                                                            "oleaut32", "shell32", "shlwapi", "user32", "winmm",
-                                                            "winspool", "wtsapi32"]
-                    if self.options.get_safe("opengl", "no") != "no":
-                        windowsintegrationplugin_requires.append("OpenGL")
-                        if self.options.get_safe("opengl", "no") != "dynamic":
-                            windowsintegrationplugin_system_libs.append("opengl32")
-                    if self.settings.compiler == "gcc":
-                        windowsintegrationplugin_system_libs.append("uuid")
-                    plugins.update({
-                        "QWindowsIntegrationPlugin": {
-                            "libs": ["qwindows"],
-                            "type": "platforms",
-                            "requires": windowsintegrationplugin_requires,
-                            "system_libs": windowsintegrationplugin_system_libs,
-                        }
-                    })
-
-                ## imageformats plugins
-                plugins.update({
-                    "QICOPlugin": {
-                        "libs": ["qico"],
-                        "type": "imageformats",
-                        "requires": ["Core", "Gui"],
-                    }
-                })
-                plugins.update({
-                    "QJpegPlugin": {
-                        "libs": ["qjpeg"],
-                        "type": "imageformats",
-                        "requires": ["Core", "Gui"] + jpeg(),
-                    }
-                })
-                plugins.update({
-                    "QGifPlugin": {
-                        "libs": ["qgif"],
-                        "type": "imageformats",
-                        "requires": ["Core", "Gui"],
-                    }
-                })
-
-                ## TODO: generic plugins
-
-                if self.options.widgets:
-                    ## Widgets
-                    widgets_system_libs = []
-                    widgets_frameworks = []
-                    if self.settings.os == "Windows":
-                        widgets_system_libs.extend(["dwmapi", "shell32", "uxtheme"])
-                    elif self.settings.os == "Macos":
-                        widgets_frameworks.extend(["AppKit"])
-                    modules.update({
-                        "Widgets": {
-                            "requires": ["Core", "Gui"],
-                            "system_libs": widgets_system_libs,
-                            "frameworks": widgets_frameworks,
-                        }
-                    })
-
-                    ## styles plugins
-                    if self.settings.os == "Android":
-                        plugins.update({
-                            "QAndroidStylePlugin": {
-                                "libs": ["qandroidstyle"],
-                                "type": "styles",
-                                "requires": ["Core", "Gui", "Widgets"],
-                            }
-                        })
-                    if self.settings.os == "Macos":
-                        plugins.update({
-                            "QMacStylePlugin": {
-                                "libs": ["qmacstyle"],
-                                "type": "styles",
-                                "requires": ["Core", "Gui", "Widgets"],
-                                "frameworks": ["AppKit"]
-                            }
-                        })
-                    if self.settings.os == "Windows":
-                        plugins.update({
-                            "QWindowsVistaStylePlugin": {
-                                "libs": ["qwindowsvistastyle"],
-                                "type": "styles",
-                                "requires": ["Core", "Gui", "Widgets"],
-                                "system_libs": ["gdi32", "user32", "uxtheme"]
-                            }
-                        })
-
-                    ## PrintSupport
-                    printsupport_system_libs = []
-                    printsupport_frameworks = []
-                    if self.settings.os == "Windows":
-                        printsupport_system_libs.extend(["gdi32", "user32", "comdlg32", "winspool"])
-                    elif self.settings.os == "Macos":
-                        printsupport_frameworks.extend(["ApplicationServices", "AppKit"])
-                        printsupport_system_libs.extend(["cups"])
-                    modules.update({
-                        "PrintSupport": {
-                            "requires": ["Core", "Gui", "Widgets"],
-                            "system_libs": printsupport_system_libs,
-                            "frameworks": printsupport_system_libs,
-                        }
-                    })
-
-                    ## TODO: printsupport plugins
-
-                    ## OpenGLWidgets
-                    if self.options.get_safe("opengl", "no") != "no":
-                        modules.update({"OpenGLWidgets": {"requires": ["OpenGL", "Widgets"]}})
-
-            ## TODO: add missing modules: DeviceDiscoverySupport, FbSupport
-
-            ## sql plugins
-            if self.options.with_sqlite3:
-                plugins.update({
-                    "QSQLiteDriverPlugin": {
-                        "libs": ["qsqlite"],
-                        "type": "sqldrivers",
-                        "requires": ["Core", "Sql", "sqlite3::sqlite3"],
-                    }
-                })
-            if self.options.with_pq:
-                plugins.update({
-                    "QPSQLDriverPlugin": {
-                        "libs": ["qsqlpsql"],
-                        "type": "sqldrivers",
-                        "requires": ["Core", "Sql", "libpq::libpq"],
-                    }
-                })
-            if self.options.with_odbc:
-                odbcdriverplugin_requires = ["Core", "Sql"]
-                odbcdriverplugin_system_libs = []
-                if self.options.os == "Windows":
-                    odbcdriverplugin_system_libs.append("odbc32")
-                else:
-                    odbcdriverplugin_requires.append("odbc::odbc")
-                plugins.update({
-                    "QODBCDriverPlugin": {
-                        "libs": ["qsqlodbc"],
-                        "type": "sqldrivers",
-                        "requires": odbcdriverplugin_requires,
-                        "system_libs": odbcdriverplugin_system_libs,
-                    }
-                })
-
-            # qtsvg
-            if self.options.qtsvg:
-                if self.options.gui:
-                    modules.update({"Svg": {"requires": ["Gui"]}})
-                    plugins.update({
-                        "QSvgIconPlugin": {"libs": ["qsvgicon"], "type": "iconengines", "requires": ["Core", "Gui", "Svg"]},
-                        "QSvgPlugin": {"libs": ["qsvg"], "type": "imageformats", "requires": ["Core", "Gui", "Svg"]},
-                    })
-                    if self.options.widgets:
-                        modules.update({"SvgWidgets": {"requires": ["Core", "Gui", "Svg", "Widgets"]}})
-
-            # qtdeclarative
-            if self.options.qtdeclarative:
-                qml_system_libs = []
-                if self.settings.os == "Windows":
-                    qml_system_libs = ["shell32"]
-                elif self.settings.os in ["Linux", "FreeBSD"] and not self.options.shared:
-                    qml_system_libs = ["rt"]
-                modules.update({
-                    "Qml": {"requires": ["Core", "Network"], "system_libs": qml_system_libs},
-                    "QmlModels": {"requires": ["Core", "Qml"]},
-                    "QmlWorkerScript": {"requires": ["Core", "Qml"]},
-                    "QmlLocalStorage": {"requires": ["Core", "Qml", "Sql"]},
-                    "LabsSettings": {"requires": ["Core", "Qml"]},
-                    "LabsQmlModels": {"requires": ["Core", "Qml"]},
-                    "LabsFolderListModel": {"requires": ["Qml", "QmlModels"]},
-                    "PacketProtocol": {"requires": ["Core"]},
-                    "QmlDevTools": {"requires": ["Core"]},
-                    "QmlDom": {"requires": ["Core", "QmlDevTools"]},
-                    "QmlCompiler": {"requires": ["Core", "QmlDevTools"]},
-                    "QmlDebug": {"requires": ["Core", "Network", "PacketProtocol", "Qml"]},
-                })
-                plugins.update({
-                    "QQmlNativeDebugConnectorFactory": {"libs": ["qmldbg_native"], "type": "qmltooling", "requires": ["Core", "PacketProtocol", "Qml"]},
-                    "QDebugMessageServiceFactory": {"libs": ["qmldbg_messages"], "type": "qmltooling", "requires": ["Core", "PacketProtocol", "Qml"]},
-                    "QQmlProfilerServiceFactory": {"libs": ["qmldbg_profiler"], "type": "qmltooling", "requires": ["Core", "PacketProtocol", "Qml"]},
-                    "QQmlDebuggerServiceFactory": {"libs": ["qmldbg_debugger"], "type": "qmltooling", "requires": ["Core", "PacketProtocol", "Qml"]},
-                    "QQmlNativeDebugServiceFactory": {"libs": ["qmldbg_nativedebugger"], "type": "qmltooling", "requires": ["Core", "PacketProtocol", "Qml"]},
-                    "QQmlDebugServerFactory": {"libs": ["qmldbg_server"], "type": "qmltooling", "requires": ["PacketProtocol", "Qml"]},
-                    "QTcpServerConnectionFactory": {"libs": ["qmldbg_tcp"], "type": "qmltooling", "requires": ["Network", "Qml"]},
-                    "QLocalClientConnectionFactory": {"libs": ["qmldbg_local"], "type": "qmltooling", "requires": ["Qml"]},
-                })
-                if self.options.gui:
-                    quick_requires = ["Core", "Gui", "Qml", "QmlModels", "Network"]
-                    if self.options.get_safe("opengl", "no") != "no":
-                        quick_requires.append("OpenGL")
-                    quick_system_libs = []
-                    if self.settings.os == "Windows":
-                        quick_system_libs = ["user32"]
-                    modules.update({
-                        "Quick": {"requires": quick_requires, "system_libs": quick_system_libs},
-                        "QuickShapes": {"requires": ["Core", "Gui", "Qml", "Quick"]},
-                        "QuickLayouts": {"requires": ["Core", "Gui", "Qml", "Quick"]},
-                        "QuickTest": {"requires": ["Core", "Gui", "Qml", "Quick", "Test"]},
-                        "QuickParticles": {"requires": ["Core", "Gui", "Qml", "Quick"]},
-                        "LabsAnimation": {"requires": ["Qml", "Quick"]},
-                        "LabsWavefrontMesh": {"requires": ["Core", "Gui", "Quick"]},
-                        "LabsSharedImage": {"requires": ["Core", "Gui", "Quick"]},
-                    })
-                    plugins.update({
-                        "QQmlInspectorServiceFactory": {"libs": ["qmldbg_inspector"], "type": "qmltooling", "requires": ["Core", "Gui", "PacketProtocol", "Qml", "Quick"]},
-                        "QQuickProfilerAdapterFactory": {"libs": ["qmldbg_quickprofiler"], "type": "qmltooling", "requires": ["Core", "Gui", "PacketProtocol", "Qml", "Quick"]},
-                        "QQmlPreviewServiceFactory": {"libs": ["qmldbg_preview"], "type": "qmltooling", "requires": ["Core", "Gui", "Network", "PacketProtocol", "Qml", "Quick"]},
-                    })
-                    if self.options.widgets:
-                        quickwidgets_requires = ["Core", "Gui", "Qml", "Quick", "Widgets"]
-                        if self.options.get_safe("opengl", "no") != "no":
-                            quickwidgets_requires.append("OpenGL")
-                        modules.update({"QuickWidgets": {"requires": quickwidgets_requires}})
-
-            # qtactiveqt (WIP)
-            if self.options.qtactiveqt and self.settings.os == "Windows":
-                if self.options.gui and self.options.widgets:
-                    modules.update({
-                        "AxBase": {"requires": ["Gui", "Widgets"]},
-                        "AxServer": {"requires": ["AxBase"]},
-                        "AxContainer": {"requires": ["AxBase"]},
-                    })
-
-            # qttools
-            if self.options.qttools:
-                if self.options.gui and self.options.widgets:
-                    uitools_requires = ["Core", "UiPlugin", "Gui", "Widgets"]
-                    designer_requires = ["Core", "Gui", "UiPlugin", "Widgets", "Xml"]
-                    if self.options.get_safe("opengl", "no") != "no":
-                        uitools_requires.extend(["OpenGL", "OpenGLWidgets"])
-                        designer_requires.extend(["OpenGL", "OpenGLWidgets"])
-                    modules.update({
-                        "UiPlugin": {"requires": ["Core", "Gui", "Widgets"], "header_only": True},
-                        "UiTools": {"requires": uitools_requires},
-                        "Designer": {"requires": designer_requires},
-                        "Help": {"requires": ["Core", "Gui", "Sql", "Widgets"]},
-                    })
-
-                    # designer plugins only built if qt shared
-                    if self.options.shared:
-                        if False: # TODO: add condition based on availability of WebKitWidgets
-                            plugins.update({
-                                "QWebViewPlugin": {
-                                    "libs": ["qwebview"],
-                                    "type": "designer",
-                                    "requires": ["Core", "Designer", "Gui", "WebKitWidgets", "Widgets"],
-                                }
-                            })
-                        if self.options.qtactiveqt and self.settings.os == "Windows":
-                            plugins.update({
-                                "QAxWidgetPlugin": {
-                                    "libs": ["qaxwidget"],
-                                    "type": "designer",
-                                    "requires": ["AxContainer", "Core", "Designer", "Gui", "Widgets"],
-                                }
-                            })
-                        if self.options.qtdeclarative:
-                            plugins.update({
-                                "QQuickWidgetPlugin": {
-                                    "libs": ["qquickwidget"],
-                                    "type": "designer",
-                                    "requires": ["Core", "Designer", "Gui", "QuickWidgets", "Widgets"],
-                                }
-                            })
-                        if False: # TODO: add a condition
-                            plugins.update({
-                                "QView3DPlugin": {
-                                    "libs": ["view3d"],
-                                    "type": "designer",
-                                    "requires": ["Core", "Designer", "Gui", "OpenGL", "Widgets"],
-                                }
-                            })
 
             # TODO: qttranslations?
 
             # TODO: qtdoc?
-
-            # qtwayland (WIP)
-            if self.options.get_safe("qtwayland"):
-                if self.options.gui:
-                    modules.update({
-                        "WaylandClient": {"requires": ["Gui", "wayland::wayland-client"]},
-                        "WaylandCompositor": {"requires": ["Gui", "wayland::wayland-client"]},
-                    })
-
-            # qt3d (WIP)
-            if self.options.qt3d:
-                if self.options.gui:
-                    modules.update({
-                        "3DCore": {"requires": ["Gui", "Network"]},
-                        "3DInput": {"requires": ["3DCore", "Gui"]},
-                        "3DLogic": {"requires": ["3DCore", "Gui"]},
-                    })
-                    if self.options.get_safe("opengl", "no") != "no":
-                        modules.update({
-                            "3DRender": {"requires": ["3DCore", "OpenGL"]},
-                            "3DAnimation": {"requires": ["3DCore", "3DRender", "Gui"]},
-                            "3DExtras": {"requires": ["Gui", "3DCore", "3DInput", "3DLogic", "3DRender"]},
-                        })
-                    if self.options.qtdeclarative:
-                        modules.update({
-                            "3DQuick": {"requires": ["3DCore", "Gui", "Qml", "Quick"]},
-                            "3DQuickInput": {"requires": ["3DCore", "3DInput", "3DQuick", "Gui", "Qml"]},
-                        })
-                    if self.options.get_safe("opengl", "no") != "no" and self.options.qtdeclarative:
-                        modules.update({
-                            "3DQuickAnimation": {"requires": ["3DAnimation", "3DCore", "3DQuick", "3DRender", "Gui", "Qml"]},
-                            "3DQuickExtras": {"requires": ["3DCore", "3DExtras", "3DInput", "3DQuick", "3DRender", "Gui", "Qml"]},
-                            "3DQuickRender": {"requires": ["3DCore", "3DQuick", "3DRender", "Gui", "Qml"]},
-                            "3DQuickScene2D": {"requires": ["3DCore", "3DQuick", "3DRender", "Gui", "Qml"]},
-                        })
-
-                _create_plugin("DefaultGeometryLoaderPlugin", "defaultgeometryloader", "geometryloaders", ["3DCore", "3DRender", "Gui"])
-                _create_plugin("fbxGeometryLoaderPlugin", "fbxgeometryloader", "geometryloaders", ["3DCore", "3DRender", "Gui"])
-
-            # qtimageformats
-            if self.options.qtimageformats:
-                if self.options.gui:
-                    plugins.update({
-                        "QTgaPlugin": {"libs": ["qtga"], "type": "imageformats", "requires": ["Core", "Gui"]},
-                        "QWbmpPlugin": {"libs": ["qwbmp"], "type": "imageformats", "requires": ["Core", "Gui"]},
-                        "QTiffPlugin": {"libs": ["qtiff"], "type": "imageformats", "requires": ["Core", "Gui", "libtiff::libtiff"]},
-                        "QWebpPlugin": {"libs": ["qwebp"], "type": "imageformats", "requires": ["Core", "Gui", "libwebp::libwebp"]},
-                        "QICNSPlugin": {"libs": ["qicns"], "type": "imageformats", "requires": ["Core", "Gui"]},
-                        # TODO: eventually add an option for Apple OS: if jasper is not used, QMacJp2Plugin is created instead
-                        "QJp2Plugin": {"libs": ["qjp2"], "type": "imageformats", "requires": ["Core", "Gui", "jasper::jasper"]},
-                    })
-                    if tools.is_apple_os(self.settings.os):
-                        plugins.update({
-                            "QMacHeifPlugin": {
-                                "libs": ["qmacheif"],
-                                "type": "imageformats",
-                                "requires": ["Core", "Gui"],
-                                "frameworks": ["CoreFoundation", "CoreGraphics", "ImageIO"],
-                            }
-                        })
-
-            # qtquickcontrols2
-            if self.options.qtquickcontrols2:
-                if self.options.gui and self.options.qtdeclarative:
-                    modules.update({
-                        "QuickTemplates2": {"requires": ["Core", "Gui", "Qml", "Quick", "QmlModels"]},
-                        "QuickControls2": {"requires": ["Core", "Gui", "Qml", "Quick", "QuickTemplates2"]},
-                        "QuickControls2Impl": {"requires": ["Core", "Gui", "Qml", "Quick", "QuickTemplates2"]},
-                    })
-
-            # qtcharts
-            if self.options.qtcharts:
-                if self.options.gui and self.options.widgets:
-                    charts_requires = ["Core", "Gui", "Widgets"]
-                    if self.options.get_safe("opengl", "no") != "no":
-                        charts_requires.extend(["OpenGL", "OpenGLWidgets"])
-                    charts_system_libs = []
-                    if self.settings.os == "Windows":
-                        charts_system_libs.append("user32")
-                    modules.update({"Charts": {"requires": charts_requires, "system_libs": charts_system_libs}})
 
             # qtdatavis3d (WIP)
             if self.options.qtdatavis3d:
@@ -1410,3 +874,603 @@ class QtConan(ConanFile):
                     obj_files = [os.path.join(submodule_dir, file) for file in os.listdir(submodule_dir)]
                     self.cpp_info.components[component].exelinkflags.extend(obj_files)
                     self.cpp_info.components[component].sharedlinkflags.extend(obj_files)
+
+    @property
+    def _qtbase_components(self):
+        def pcre2():
+            return ["pcre2::pcre2"] if self.options.with_pcre2 else []
+
+        def doubleconversion():
+            return ["double-conversion::double-conversion"] if self.options.with_doubleconversion and not self.options.multiconfiguration else []
+
+        def glib():
+            return ["glib::glib"] if self.options.with_glib else []
+
+        def icu():
+            return ["icu::icu"] if self.options.get_safe("with_icu") else []
+
+        def zstd():
+            return ["zstd::zstd"] if self.options.with_zstd else []
+
+        def freetype():
+            return ["freetype::freetype"] if self.options.with_freetype else []
+
+        def png():
+            return ["libpng::libpng"] if self.options.with_libpng else []
+
+        def fontconfig():
+            return ["fontconfig::fontconfig"] if self.options.get_safe("with_fontconfig") else []
+
+        def xorg():
+            xorg = []
+            if self.settings.os in ["Linux", "FreeBSD"]:
+                xorg.append("xorg::xorg")
+                if not tools.cross_building(self, skip_x64_x86=True):
+                    xorg.append("xkbcommon::xkbcommon")
+            return xorg
+
+        def opengl():
+            return ["opengl::opengl"] if self.settings.os != "Windows" and self.options.get_safe("opengl", "no") != "no" else []
+
+        def harfbuzz():
+            return ["harfbuzz::harfbuzz"] if self.options.with_harfbuzz else []
+
+        def jpeg():
+            if self.options.with_libjpeg == "libjpeg-turbo":
+                return ["libjpeg-turbo::libjpeg-turbo"]
+            elif self.options.with_libjpeg == "libjpeg":
+                return ["libjpeg::libjpeg"]
+            return []
+
+        def vulkan():
+            return ["vulkan-loader::vulkan-loader"] if self.options.get_safe("with_vulkan") else []
+
+        def openssl():
+            return ["openssl::openssl"] if self.options.openssl else []
+
+        def brotli():
+            return ["brotli::brotli"] if self.options.with_brotli else []
+
+        modules = {}
+        plugins = {}
+
+        # Core
+        core_system_libs = []
+        core_frameworks = []
+        if self.settings.os == "Windows":
+            core_system_libs.extend(["advapi32", "netapi32", "ole32", "shell32", "user32",
+                                     "uuid", "version", "winmm", "ws2_32", "mpr", "userenv"])
+        elif self.settings.os in ["Linux", "FreeBSD"]:
+            core_system_libs.extend(["m", "dl", "pthread"])
+        elif tools.is_apple_os(self.settings.os):
+            core_frameworks.extend(["CoreFoundation", "Foundation"])
+            if self.settings.os == "Macos":
+                core_frameworks.extend(["AppKit", "ApplicationServices", "CoreServices",
+                                        "Security", "DiskArbitration", "IOKit"])
+            elif self.settings.os in ["iOS", "tvOS"]:
+                core_frameworks.append("UIKit")
+            elif self.settings.os == "watchOS":
+                core_frameworks.append("WatchKit")
+        modules.update({
+            "Core": {
+                "requires": ["zlib::zlib"] + pcre2() + doubleconversion() + glib() + icu() + zstd(),
+                "system_libs": core_system_libs,
+                "frameworks": core_frameworks,
+            }
+        })
+        # Concurrent
+        modules.update({"Concurrent": {"requires": ["Core"]}})
+        # Sql
+        modules.update({"Sql": {"requires": ["Core"]}})
+        # Network
+        network_system_libs = []
+        network_frameworks = []
+        if self.settings.os == "Windows":
+            network_system_libs.extend(["advapi32", "dnsapi", "iphlpapi"])
+            # which condition?
+            # network_system_libs.extend(["Crypt32", "Secur32", "bcrypt", "ncrypt"])
+        elif self.settings.os in ["Linux", "FreeBSD"]:
+            network_system_libs.extend(["dl"])
+        elif tools.is_apple_os(self.settings.os):
+            if self.settings.os == "Macos":
+                network_frameworks.extend(["CoreServices", "GSS"])
+            if self.settings.os in ["Macos", "iOS"]:
+                network_frameworks.append("SystemConfiguration")
+        modules.update({
+            "Network": {
+                "requires": ["Core", "zlib::zlib"] + openssl() + brotli() + zstd(),
+                "system_libs": network_system_libs,
+                "frameworks": network_frameworks,
+            }
+        })
+        # Xml
+        modules.update({"Xml": {"requires": ["Core"]}})
+        # DBus
+        dbus_system_libs = []
+        if self.settings.os == "Windows":
+            dbus_system_libs.extend(["advapi32", "netapi32", "user32", "ws2_32"])
+        modules.update({"DBus": {"requires": ["Core"], "system_libs": dbus_system_libs}})
+        # Test
+        test_frameworks = []
+        if tools.is_apple_os(self.settings.os):
+            test_frameworks.append("Security")
+            if self.settings.os == "Macos":
+                test_frameworks.extend(["AppKit", "ApplicationServices", "Foundation", "IOKit"])
+        modules.update({"Test": {"requires": ["Core"], "frameworks": test_frameworks}})
+
+        if self.options.gui:
+            # Gui
+            gui_system_libs = []
+            gui_frameworks = []
+            if self.settings.os == "Windows":
+                gui_system_libs.extend(["advapi32", "gdi32", "ole32", "shell32",
+                                        "user32", "d3d11", "dxgi", "dxguid"])
+                # which condition?
+                # gui_system_libs.extend(["d2d1", "dwrite", "uuid"])
+                if self.settings.compiler == "gcc":
+                    gui_system_libs.append("uuid")
+            elif self.settings.os in ["Linux", "FreeBSD"]:
+                gui_system_libs.append("dl")
+            elif tools.is_apple_os(self.settings.os):
+                gui_frameworks.extend(["CoreServices", "CoreGraphics", "CoreText", "Foundation", "ImageIO"])
+                if self.settings.os == "Macos":
+                    gui_frameworks.extend(["AppKit", "Carbon"])
+                if self.settings.os in ["Macos", "iOS"]:
+                    gui_frameworks.append("Metal")
+                if self.settings.os != "Macos":
+                    gui_frameworks.append("UIKit")
+            modules.update({
+                "Gui": {
+                    "requires": ["Core", "DBus", "zlib::zlib"] + freetype() + png() + fontconfig() +
+                                 xorg() + opengl() + harfbuzz() + jpeg() + vulkan() + glib(),
+                    "system_libs": gui_system_libs,
+                    "frameworks": gui_frameworks,
+                }
+            })
+            # OpenGL
+            if self.options.get_safe("opengl", "no") != "no":
+                modules.update({"OpenGL": {"requires": ["Core", "Gui"] + vulkan()}})
+
+            # platforms plugins
+            if self.settings.os == "Android":
+                # TODO: should link to EGL also
+                plugins.update({
+                    "QAndroidIntegrationPlugin": {
+                        "libs": ["qtforandroid"],
+                        "type": "platforms",
+                        "requires": ["Core", "Gui"],
+                        "system_libs": ["android", "jnigraphics"],
+                    }
+                })
+            else:
+                plugins.update({
+                    "QMinimalIntegrationPlugin": {
+                        "libs": ["qminimal"],
+                        "type": "platforms",
+                        "requires": ["Core", "Gui"] + freetype(),
+                    }
+                })
+                if self.options.get_safe("with_fontconfig"):
+                    plugins.update({
+                        "QOffscreenIntegrationPlugin": {
+                            "libs": ["qoffscreen"],
+                            "type": "platforms",
+                            "requires": ["Core", "Gui"] + xorg(),
+                        }
+                    })
+            if self.settings.os in ["Linux", "FreeBSD"]:
+                # TODO: depends on Qt::XcbQpaPrivate
+                plugins.update({
+                    "QXcbIntegrationPlugin": {
+                        "libs": ["qxcb"],
+                        "type": "platforms",
+                        "requires": ["Core", "Gui"],
+                    }
+                })
+                # TODO: more plugins for xcb
+            if self.settings.os in ["iOS", "tvOS"]:
+                iosintegrationplugin_frameworks = ["AudioToolbox", "Foundation", "Metal", "QuartzCore", "UIKit"]
+                if self.settings.os != "tvOS":
+                    iosintegrationplugin_frameworks.append("AssetsLibrary")
+                plugins.update({
+                    "QIOSIntegrationPlugin": {
+                        "libs": ["qios"],
+                        "type": "platforms",
+                        "requires": ["Core", "Gui"] + opengl(),
+                        "frameworks": iosintegrationplugin_frameworks,
+                    }
+                })
+            if self.settings.os == "Macos":
+                plugins.update({
+                    "QCocoaIntegrationPlugin": {
+                        "libs": ["qcocoa"],
+                        "type": "platforms",
+                        "requires": ["Core", "Gui"],
+                        "frameworks": ["AppKit", "Carbon", "CoreServices", "CoreVideo",
+                                       "IOKit", "IOSurface", "Metal", "QuartzCore"],
+                    }
+                })
+            if self.settings.os == "Windows":
+                windowsintegrationplugin_requires = ["Core", "Gui"]
+                windowsintegrationplugin_system_libs = ["advapi32", "dwmapi", "gdi32", "imm32", "ole32",
+                                                        "oleaut32", "shell32", "shlwapi", "user32", "winmm",
+                                                        "winspool", "wtsapi32"]
+                if self.options.get_safe("opengl", "no") != "no":
+                    windowsintegrationplugin_requires.append("OpenGL")
+                    if self.options.get_safe("opengl", "no") != "dynamic":
+                        windowsintegrationplugin_system_libs.append("opengl32")
+                if self.settings.compiler == "gcc":
+                    windowsintegrationplugin_system_libs.append("uuid")
+                plugins.update({
+                    "QWindowsIntegrationPlugin": {
+                        "libs": ["qwindows"],
+                        "type": "platforms",
+                        "requires": windowsintegrationplugin_requires,
+                        "system_libs": windowsintegrationplugin_system_libs,
+                    }
+                })
+
+            # imageformats plugins
+            plugins.update({
+                "QICOPlugin": {
+                    "libs": ["qico"],
+                    "type": "imageformats",
+                    "requires": ["Core", "Gui"],
+                }
+            })
+            plugins.update({
+                "QJpegPlugin": {
+                    "libs": ["qjpeg"],
+                    "type": "imageformats",
+                    "requires": ["Core", "Gui"] + jpeg(),
+                }
+            })
+            plugins.update({
+                "QGifPlugin": {
+                    "libs": ["qgif"],
+                    "type": "imageformats",
+                    "requires": ["Core", "Gui"],
+                }
+            })
+
+            # TODO: generic plugins
+
+            if self.options.widgets:
+                ## Widgets
+                widgets_system_libs = []
+                widgets_frameworks = []
+                if self.settings.os == "Windows":
+                    widgets_system_libs.extend(["dwmapi", "shell32", "uxtheme"])
+                elif self.settings.os == "Macos":
+                    widgets_frameworks.extend(["AppKit"])
+                modules.update({
+                    "Widgets": {
+                        "requires": ["Core", "Gui"],
+                        "system_libs": widgets_system_libs,
+                        "frameworks": widgets_frameworks,
+                    }
+                })
+
+                # styles plugins
+                if self.settings.os == "Android":
+                    plugins.update({
+                        "QAndroidStylePlugin": {
+                            "libs": ["qandroidstyle"],
+                            "type": "styles",
+                            "requires": ["Core", "Gui", "Widgets"],
+                        }
+                    })
+                if self.settings.os == "Macos":
+                    plugins.update({
+                        "QMacStylePlugin": {
+                            "libs": ["qmacstyle"],
+                            "type": "styles",
+                            "requires": ["Core", "Gui", "Widgets"],
+                            "frameworks": ["AppKit"]
+                        }
+                    })
+                if self.settings.os == "Windows":
+                    plugins.update({
+                        "QWindowsVistaStylePlugin": {
+                            "libs": ["qwindowsvistastyle"],
+                            "type": "styles",
+                            "requires": ["Core", "Gui", "Widgets"],
+                            "system_libs": ["gdi32", "user32", "uxtheme"]
+                        }
+                    })
+
+                # PrintSupport
+                printsupport_system_libs = []
+                printsupport_frameworks = []
+                if self.settings.os == "Windows":
+                    printsupport_system_libs.extend(["gdi32", "user32", "comdlg32", "winspool"])
+                elif self.settings.os == "Macos":
+                    printsupport_frameworks.extend(["ApplicationServices", "AppKit"])
+                    printsupport_system_libs.extend(["cups"])
+                modules.update({
+                    "PrintSupport": {
+                        "requires": ["Core", "Gui", "Widgets"],
+                        "system_libs": printsupport_system_libs,
+                        "frameworks": printsupport_system_libs,
+                    }
+                })
+
+                # TODO: printsupport plugins
+
+                # OpenGLWidgets
+                if self.options.get_safe("opengl", "no") != "no":
+                    modules.update({"OpenGLWidgets": {"requires": ["OpenGL", "Widgets"]}})
+
+        # TODO: add missing modules: DeviceDiscoverySupport, FbSupport
+
+        # sql plugins
+        if self.options.with_sqlite3:
+            plugins.update({
+                "QSQLiteDriverPlugin": {
+                    "libs": ["qsqlite"],
+                    "type": "sqldrivers",
+                    "requires": ["Core", "Sql", "sqlite3::sqlite3"],
+                }
+            })
+        if self.options.with_pq:
+            plugins.update({
+                "QPSQLDriverPlugin": {
+                    "libs": ["qsqlpsql"],
+                    "type": "sqldrivers",
+                    "requires": ["Core", "Sql", "libpq::libpq"],
+                }
+            })
+        if self.options.with_odbc:
+            odbcdriverplugin_requires = ["Core", "Sql"]
+            odbcdriverplugin_system_libs = []
+            if self.options.os == "Windows":
+                odbcdriverplugin_system_libs.append("odbc32")
+            else:
+                odbcdriverplugin_requires.append("odbc::odbc")
+            plugins.update({
+                "QODBCDriverPlugin": {
+                    "libs": ["qsqlodbc"],
+                    "type": "sqldrivers",
+                    "requires": odbcdriverplugin_requires,
+                    "system_libs": odbcdriverplugin_system_libs,
+                }
+            })
+
+        return {"modules": modules, "plugins": plugins}
+
+    @property
+    def _qtsvg_components(self):
+        modules = {}
+        plugins = {}
+        if self.options.gui:
+            modules.update({"Svg": {"requires": ["Gui"]}})
+            plugins.update({
+                "QSvgIconPlugin": {"libs": ["qsvgicon"], "type": "iconengines", "requires": ["Core", "Gui", "Svg"]},
+                "QSvgPlugin": {"libs": ["qsvg"], "type": "imageformats", "requires": ["Core", "Gui", "Svg"]},
+            })
+            if self.options.widgets:
+                modules.update({"SvgWidgets": {"requires": ["Core", "Gui", "Svg", "Widgets"]}})
+        return {"modules": modules, "plugins": plugins}
+
+    @property
+    def _qtdeclarative_components(self):
+        modules = {}
+        plugins = {}
+
+        qml_system_libs = []
+        if self.settings.os == "Windows":
+            qml_system_libs = ["shell32"]
+        elif self.settings.os in ["Linux", "FreeBSD"] and not self.options.shared:
+            qml_system_libs = ["rt"]
+        modules.update({
+            "Qml": {"requires": ["Core", "Network"], "system_libs": qml_system_libs},
+            "QmlModels": {"requires": ["Core", "Qml"]},
+            "QmlWorkerScript": {"requires": ["Core", "Qml"]},
+            "QmlLocalStorage": {"requires": ["Core", "Qml", "Sql"]},
+            "LabsSettings": {"requires": ["Core", "Qml"]},
+            "LabsQmlModels": {"requires": ["Core", "Qml"]},
+            "LabsFolderListModel": {"requires": ["Qml", "QmlModels"]},
+            "PacketProtocol": {"requires": ["Core"]},
+            "QmlDevTools": {"requires": ["Core"]},
+            "QmlDom": {"requires": ["Core", "QmlDevTools"]},
+            "QmlCompiler": {"requires": ["Core", "QmlDevTools"]},
+            "QmlDebug": {"requires": ["Core", "Network", "PacketProtocol", "Qml"]},
+        })
+        plugins.update({
+            "QQmlNativeDebugConnectorFactory": {"libs": ["qmldbg_native"], "type": "qmltooling", "requires": ["Core", "PacketProtocol", "Qml"]},
+            "QDebugMessageServiceFactory": {"libs": ["qmldbg_messages"], "type": "qmltooling", "requires": ["Core", "PacketProtocol", "Qml"]},
+            "QQmlProfilerServiceFactory": {"libs": ["qmldbg_profiler"], "type": "qmltooling", "requires": ["Core", "PacketProtocol", "Qml"]},
+            "QQmlDebuggerServiceFactory": {"libs": ["qmldbg_debugger"], "type": "qmltooling", "requires": ["Core", "PacketProtocol", "Qml"]},
+            "QQmlNativeDebugServiceFactory": {"libs": ["qmldbg_nativedebugger"], "type": "qmltooling", "requires": ["Core", "PacketProtocol", "Qml"]},
+            "QQmlDebugServerFactory": {"libs": ["qmldbg_server"], "type": "qmltooling", "requires": ["PacketProtocol", "Qml"]},
+            "QTcpServerConnectionFactory": {"libs": ["qmldbg_tcp"], "type": "qmltooling", "requires": ["Network", "Qml"]},
+            "QLocalClientConnectionFactory": {"libs": ["qmldbg_local"], "type": "qmltooling", "requires": ["Qml"]},
+        })
+        if self.options.gui:
+            quick_requires = ["Core", "Gui", "Qml", "QmlModels", "Network"]
+            if self.options.get_safe("opengl", "no") != "no":
+                quick_requires.append("OpenGL")
+            quick_system_libs = []
+            if self.settings.os == "Windows":
+                quick_system_libs = ["user32"]
+            modules.update({
+                "Quick": {"requires": quick_requires, "system_libs": quick_system_libs},
+                "QuickShapes": {"requires": ["Core", "Gui", "Qml", "Quick"]},
+                "QuickLayouts": {"requires": ["Core", "Gui", "Qml", "Quick"]},
+                "QuickTest": {"requires": ["Core", "Gui", "Qml", "Quick", "Test"]},
+                "QuickParticles": {"requires": ["Core", "Gui", "Qml", "Quick"]},
+                "LabsAnimation": {"requires": ["Qml", "Quick"]},
+                "LabsWavefrontMesh": {"requires": ["Core", "Gui", "Quick"]},
+                "LabsSharedImage": {"requires": ["Core", "Gui", "Quick"]},
+            })
+            plugins.update({
+                "QQmlInspectorServiceFactory": {"libs": ["qmldbg_inspector"], "type": "qmltooling", "requires": ["Core", "Gui", "PacketProtocol", "Qml", "Quick"]},
+                "QQuickProfilerAdapterFactory": {"libs": ["qmldbg_quickprofiler"], "type": "qmltooling", "requires": ["Core", "Gui", "PacketProtocol", "Qml", "Quick"]},
+                "QQmlPreviewServiceFactory": {"libs": ["qmldbg_preview"], "type": "qmltooling", "requires": ["Core", "Gui", "Network", "PacketProtocol", "Qml", "Quick"]},
+            })
+            if self.options.widgets:
+                quickwidgets_requires = ["Core", "Gui", "Qml", "Quick", "Widgets"]
+                if self.options.get_safe("opengl", "no") != "no":
+                    quickwidgets_requires.append("OpenGL")
+                modules.update({"QuickWidgets": {"requires": quickwidgets_requires}})
+
+        return {"modules": modules, "plugins": plugins}
+
+    @property
+    def _qtactiveqt_components(self): # WIP
+        modules = {}
+        if self.settings.os == "Windows":
+            if self.options.gui and self.options.widgets:
+                modules.update({
+                    "AxBase": {"requires": ["Gui", "Widgets"]},
+                    "AxServer": {"requires": ["AxBase"]},
+                    "AxContainer": {"requires": ["AxBase"]},
+                })
+        return {"modules": modules, "plugins": {}}
+
+    @property
+    def _qttools_components(self):
+        modules = {}
+        plugins = {}
+        if self.options.gui and self.options.widgets:
+            uitools_requires = ["Core", "UiPlugin", "Gui", "Widgets"]
+            designer_requires = ["Core", "Gui", "UiPlugin", "Widgets", "Xml"]
+            if self.options.get_safe("opengl", "no") != "no":
+                uitools_requires.extend(["OpenGL", "OpenGLWidgets"])
+                designer_requires.extend(["OpenGL", "OpenGLWidgets"])
+            modules.update({
+                "UiPlugin": {"requires": ["Core", "Gui", "Widgets"], "header_only": True},
+                "UiTools": {"requires": uitools_requires},
+                "Designer": {"requires": designer_requires},
+                "Help": {"requires": ["Core", "Gui", "Sql", "Widgets"]},
+            })
+
+            # designer plugins only built if qt shared
+            if self.options.shared:
+                if False: # TODO: add condition based on availability of WebKitWidgets
+                    plugins.update({
+                        "QWebViewPlugin": {
+                            "libs": ["qwebview"],
+                            "type": "designer",
+                            "requires": ["Core", "Designer", "Gui", "WebKitWidgets", "Widgets"],
+                        }
+                    })
+                if self.options.qtactiveqt and self.settings.os == "Windows":
+                    plugins.update({
+                        "QAxWidgetPlugin": {
+                            "libs": ["qaxwidget"],
+                            "type": "designer",
+                            "requires": ["AxContainer", "Core", "Designer", "Gui", "Widgets"],
+                        }
+                    })
+                if self.options.qtdeclarative:
+                    plugins.update({
+                        "QQuickWidgetPlugin": {
+                            "libs": ["qquickwidget"],
+                            "type": "designer",
+                            "requires": ["Core", "Designer", "Gui", "QuickWidgets", "Widgets"],
+                        }
+                    })
+                if False: # TODO: add a condition
+                    plugins.update({
+                        "QView3DPlugin": {
+                            "libs": ["view3d"],
+                            "type": "designer",
+                            "requires": ["Core", "Designer", "Gui", "OpenGL", "Widgets"],
+                        }
+                    })
+        return {"modules": modules, "plugins": plugins}
+
+    @property
+    def _qtwayland_components(self): # WIP
+        modules = {}
+        plugins = {}
+        if self.options.gui:
+            modules.update({
+                "WaylandClient": {"requires": ["Gui", "wayland::wayland-client"]},
+                "WaylandCompositor": {"requires": ["Gui", "wayland::wayland-client"]},
+            })
+        return {"modules": modules, "plugins": plugins}
+
+    @property
+    def _qt3d_components(self): # WIP
+        modules = {}
+        plugins = {}
+        if self.options.gui:
+            modules.update({
+                "3DCore": {"requires": ["Gui", "Network"]},
+                "3DInput": {"requires": ["3DCore", "Gui"]},
+                "3DLogic": {"requires": ["3DCore", "Gui"]},
+            })
+            if self.options.get_safe("opengl", "no") != "no":
+                modules.update({
+                    "3DRender": {"requires": ["3DCore", "OpenGL"]},
+                    "3DAnimation": {"requires": ["3DCore", "3DRender", "Gui"]},
+                    "3DExtras": {"requires": ["Gui", "3DCore", "3DInput", "3DLogic", "3DRender"]},
+                })
+            if self.options.qtdeclarative:
+                modules.update({
+                    "3DQuick": {"requires": ["3DCore", "Gui", "Qml", "Quick"]},
+                    "3DQuickInput": {"requires": ["3DCore", "3DInput", "3DQuick", "Gui", "Qml"]},
+                })
+            if self.options.get_safe("opengl", "no") != "no" and self.options.qtdeclarative:
+                modules.update({
+                    "3DQuickAnimation": {"requires": ["3DAnimation", "3DCore", "3DQuick", "3DRender", "Gui", "Qml"]},
+                    "3DQuickExtras": {"requires": ["3DCore", "3DExtras", "3DInput", "3DQuick", "3DRender", "Gui", "Qml"]},
+                    "3DQuickRender": {"requires": ["3DCore", "3DQuick", "3DRender", "Gui", "Qml"]},
+                    "3DQuickScene2D": {"requires": ["3DCore", "3DQuick", "3DRender", "Gui", "Qml"]},
+                })
+        plugins.update({"DefaultGeometryLoaderPlugin": {"libs": ["defaultgeometryloader"], "type": "geometryloaders", "requires": ["3DCore", "3DRender", "Gui"]}})
+        plugins.update({"fbxGeometryLoaderPlugin": {"libs": ["fbxgeometryloader"], "type": "geometryloaders", "requires": ["3DCore", "3DRender", "Gui"]}})
+        return {"modules": modules, "plugins": plugins}
+
+    @property
+    def _qtimageformats_components(self):
+        modules = {}
+        plugins = {}
+        if self.options.gui:
+            plugins.update({
+                "QTgaPlugin": {"libs": ["qtga"], "type": "imageformats", "requires": ["Core", "Gui"]},
+                "QWbmpPlugin": {"libs": ["qwbmp"], "type": "imageformats", "requires": ["Core", "Gui"]},
+                "QTiffPlugin": {"libs": ["qtiff"], "type": "imageformats", "requires": ["Core", "Gui", "libtiff::libtiff"]},
+                "QWebpPlugin": {"libs": ["qwebp"], "type": "imageformats", "requires": ["Core", "Gui", "libwebp::libwebp"]},
+                "QICNSPlugin": {"libs": ["qicns"], "type": "imageformats", "requires": ["Core", "Gui"]},
+                # TODO: eventually add an option for Apple OS: if jasper is not used, QMacJp2Plugin is created instead
+                "QJp2Plugin": {"libs": ["qjp2"], "type": "imageformats", "requires": ["Core", "Gui", "jasper::jasper"]},
+            })
+            if tools.is_apple_os(self.settings.os):
+                plugins.update({
+                    "QMacHeifPlugin": {
+                        "libs": ["qmacheif"],
+                        "type": "imageformats",
+                        "requires": ["Core", "Gui"],
+                        "frameworks": ["CoreFoundation", "CoreGraphics", "ImageIO"],
+                    }
+                })
+        return {"modules": modules, "plugins": plugins}
+
+    @property
+    def _qtquickcontrols2_components(self):
+        modules = {}
+        plugins = {}
+        if self.options.gui and self.options.qtdeclarative:
+            modules.update({
+                "QuickTemplates2": {"requires": ["Core", "Gui", "Qml", "Quick", "QmlModels"]},
+                "QuickControls2": {"requires": ["Core", "Gui", "Qml", "Quick", "QuickTemplates2"]},
+                "QuickControls2Impl": {"requires": ["Core", "Gui", "Qml", "Quick", "QuickTemplates2"]},
+            })
+        return {"modules": modules, "plugins": plugins}
+
+    @property
+    def _qtcharts_components(self):
+        modules = {}
+        plugins = {}
+        if self.options.gui and self.options.widgets:
+            charts_requires = ["Core", "Gui", "Widgets"]
+            if self.options.get_safe("opengl", "no") != "no":
+                charts_requires.extend(["OpenGL", "OpenGLWidgets"])
+            charts_system_libs = []
+            if self.settings.os == "Windows":
+                charts_system_libs.append("user32")
+            modules.update({"Charts": {"requires": charts_requires, "system_libs": charts_system_libs}})
+        return {"modules": modules, "plugins": plugins}
