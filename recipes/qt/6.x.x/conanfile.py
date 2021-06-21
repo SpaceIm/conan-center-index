@@ -1,5 +1,4 @@
 import os
-import shutil
 import glob
 import textwrap
 
@@ -7,6 +6,8 @@ import configparser
 from conans import ConanFile, tools, RunEnvironment, CMake
 from conans.errors import ConanInvalidConfiguration
 from conans.model import Generator
+
+required_conan_version = ">=1.33.0"
 
 
 class qt(Generator):
@@ -159,9 +160,6 @@ class QtConan(ConanFile):
         if self.settings.os not in ["Linux", "FreeBSD"]:
             del self.options.with_icu
             del self.options.with_fontconfig
-
-        if self.settings.os == "Windows":
-            self.options.opengl = "dynamic"
         if self.settings.os != "Linux":
             del self.options.qtwayland
 
@@ -169,26 +167,11 @@ class QtConan(ConanFile):
             if m not in self._get_module_tree:
                 delattr(self.options, m)
 
-    @property
-    def _minimum_compilers_version(self):
-        # Qt6 requires C++17
-        return {
-            "Visual Studio": "16",
-            "gcc": "8",
-            "clang": "9",
-            "apple-clang": "11"
-        }
+        # default options
+        if self.settings.os == "Windows":
+            self.options.opengl = "dynamic"
 
     def configure(self):
-        # C++ minimum standard required
-        if self.settings.compiler.get_safe("cppstd"):
-            tools.check_min_cppstd(self, 17)
-        minimum_version = self._minimum_compilers_version.get(str(self.settings.compiler), False)
-        if not minimum_version:
-            self.output.warn("C++17 support required. Your compiler is unknown. Assuming it supports C++17.")
-        elif tools.Version(self.settings.compiler.version) < minimum_version:
-            raise ConanInvalidConfiguration("C++17 support required, which your compiler does not support.")
-
         if not self.options.gui:
             del self.options.opengl
             del self.options.with_vulkan
@@ -198,20 +181,8 @@ class QtConan(ConanFile):
             del self.options.with_libjpeg
             del self.options.with_libpng
 
-        if self.settings.os == "Android" and self.options.get_safe("opengl", "no") == "desktop":
-            raise ConanInvalidConfiguration("OpenGL desktop is not supported on Android.")
-
-        if self.settings.os != "Windows" and self.options.get_safe("opengl", "no") == "dynamic":
-            raise ConanInvalidConfiguration("Dynamic OpenGL is supported only on Windows.")
-
-        if self.options.get_safe("with_fontconfig", False) and not self.options.get_safe("with_freetype", False):
-            raise ConanInvalidConfiguration("with_fontconfig cannot be enabled if with_freetype is disabled.")
-
         if self.options.multiconfiguration:
             del self.settings.build_type
-
-        if "MT" in self.settings.get_safe("compiler.runtime", default="") and self.options.shared:
-            raise ConanInvalidConfiguration("Qt cannot be built as shared library with static runtime")
 
         def _enablemodule(mod):
             if mod != "qtbase":
@@ -279,17 +250,63 @@ class QtConan(ConanFile):
             self.requires("libwebp/1.2.0")
             # TODO: add libmng to create QMngPlugin
 
+    @property
+    def _minimum_compilers_version(self):
+        # Qt6 requires C++17
+        return {
+            "Visual Studio": "16",
+            "gcc": "8",
+            "clang": "9",
+            "apple-clang": "11"
+        }
+
     def validate(self):
+        # C++ minimum standard required
+        if self.settings.compiler.get_safe("cppstd"):
+            tools.check_min_cppstd(self, 17)
+        minimum_version = self._minimum_compilers_version.get(str(self.settings.compiler), False)
+        if not minimum_version:
+            self.output.warn("C++17 support required. Your compiler is unknown. Assuming it supports C++17.")
+        elif tools.Version(self.settings.compiler.version) < minimum_version:
+            raise ConanInvalidConfiguration("C++17 support required, which your compiler does not support.")
+
+        if self.settings.os == "Android" and self.options.get_safe("opengl", "no") == "desktop":
+            raise ConanInvalidConfiguration("OpenGL desktop is not supported on Android.")
+
+        if self.settings.os != "Windows" and self.options.get_safe("opengl", "no") == "dynamic":
+            raise ConanInvalidConfiguration("Dynamic OpenGL is supported only on Windows.")
+
+        if self.options.get_safe("with_fontconfig") and not self.options.get_safe("with_freetype"):
+            raise ConanInvalidConfiguration("with_fontconfig cannot be enabled if with_freetype is disabled.")
+
+        if str(self.settings.compiler.get_safe("runtime", "")) in ["MT", "MTd", "static"] and self.options.shared:
+            raise ConanInvalidConfiguration("Qt cannot be built as shared library with static runtime")
+
         if self.options.widgets and not self.options.gui:
             raise ConanInvalidConfiguration("widgets requires gui")
         if self.options.qtsvg and not self.options.gui:
             raise ConanInvalidConfiguration("qtsvg requires gui")
+        if self.options.qtdeclarative and not self.options.qtsvg:
+            raise ConanInvalidConfiguration("qtdeclarative requires qtsvg")
+        if self.options.qtactiveqt and not (self.options.gui and self.options.widgets):
+            raise ConanInvalidConfiguration("qtactiveqt requires gui and widgets")
+        if self.options.qttools and not (self.options.qtactiveqt and self.options.qtdeclarative):
+            raise ConanInvalidConfiguration("qttools requires qtactiveqt and qtdeclarative")
         if self.options.qtimageformats and not self.options.gui:
             raise ConanInvalidConfiguration("qtimageformats requires gui")
         if self.options.qtquickcontrols2 and not (self.options.gui and self.options.qtdeclarative and self.options.qtsvg and self.options.qtimageformats):
             raise ConanInvalidConfiguration("qtquickcontrols2 requires gui, qtdeclarative, qtsvg and qtimageformats")
         if self.options.qtcharts and not (self.options.gui and self.options.widgets):
             raise ConanInvalidConfiguration("qtcharts requires gui and widgets")
+
+    def package_id(self):
+        del self.info.options.cross_compile
+        del self.info.options.sysroot
+        if self.options.multiconfiguration and self.settings.compiler == "Visual Studio":
+            if "MD" in self.settings.compiler.runtime:
+                self.info.settings.compiler.runtime = "MD/MDd"
+            else:
+                self.info.settings.compiler.runtime = "MT/MTd"
 
     def build_requirements(self):
         self.build_requires("cmake/3.20.2")
@@ -299,8 +316,8 @@ class QtConan(ConanFile):
             self.build_requires('strawberryperl/5.30.0.1')
 
     def source(self):
-        tools.get(**self.conan_data["sources"][self.version])
-        shutil.move("qt-everywhere-src-%s" % self.version, "qt6")
+        tools.get(**self.conan_data["sources"][self.version],
+                  destination="qt6", strip_root=True)
 
         # patching in source method because of no_copy_source attribute
 
@@ -568,6 +585,7 @@ class QtConan(ConanFile):
                 }) if tools.os_info.is_macos else tools.no_op():
                     with tools.run_environment(self):
                         cmake.build()
+
     @property
     def _cmake_executables_file(self):
         return os.path.join("lib", "cmake", "Qt6Core", "conan_qt_executables_variables.cmake")
@@ -659,15 +677,6 @@ class QtConan(ConanFile):
 
         if self.options.qtdeclarative:
             _create_private_module("Qml", ["CorePrivate", "Qml"])
-
-    def package_id(self):
-        del self.info.options.cross_compile
-        del self.info.options.sysroot
-        if self.options.multiconfiguration and self.settings.compiler == "Visual Studio":
-            if "MD" in self.settings.compiler.runtime:
-                self.info.settings.compiler.runtime = "MD/MDd"
-            else:
-                self.info.settings.compiler.runtime = "MT/MTd"
 
     def package_info(self):
         self.cpp_info.names["cmake_find_package"] = "Qt6"
@@ -1146,7 +1155,7 @@ class QtConan(ConanFile):
                         modules.update({"QuickWidgets": {"internal_deps": quickwidgets_internal_deps}})
 
             # qtactiveqt (WIP)
-            if self.options.qtactiveqt:
+            if self.options.qtactiveqt and self.settings.os == "Windows":
                 if self.options.gui and self.options.widgets:
                     modules.update({
                         "AxBase": {"internal_deps": ["Gui", "Widgets"]},
