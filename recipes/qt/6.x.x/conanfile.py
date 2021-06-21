@@ -802,9 +802,9 @@ class QtConan(ConanFile):
                 }
             })
             ## Concurrent
-            modules.update({"Concurrent": {"internal_deps": ["Core"]}})
+            modules.update({"Concurrent": {"requires": ["Core"]}})
             ## Sql
-            modules.update({"Sql": {"internal_deps": ["Core"]}})
+            modules.update({"Sql": {"requires": ["Core"]}})
             ## Network
             network_system_libs = []
             network_frameworks = []
@@ -821,26 +821,25 @@ class QtConan(ConanFile):
                     network_frameworks.append("SystemConfiguration")
             modules.update({
                 "Network": {
-                    "internal_deps": ["Core"],
-                    "requires": ["zlib::zlib"] + openssl() + brotli() + zstd(),
+                    "requires": ["Core", "zlib::zlib"] + openssl() + brotli() + zstd(),
                     "system_libs": network_system_libs,
                     "frameworks": network_frameworks,
                 }
             })
             ## Xml
-            modules.update({"Xml": {"internal_deps": ["Core"]}})
+            modules.update({"Xml": {"requires": ["Core"]}})
             ## DBus
             dbus_system_libs = []
             if self.settings.os == "Windows":
                 dbus_system_libs.extend(["advapi32", "netapi32", "user32", "ws2_32"])
-            modules.update({"DBus": {"internal_deps": ["Core"], "system_libs": dbus_system_libs}})
+            modules.update({"DBus": {"requires": ["Core"], "system_libs": dbus_system_libs}})
             ## Test
             test_frameworks = []
             if tools.is_apple_os(self.settings.os):
                 test_frameworks.append("Security")
                 if self.settings.os == "Macos":
                     test_frameworks.extend(["AppKit", "ApplicationServices", "Foundation", "IOKit"])
-            modules.update({"Test": {"internal_deps": ["Core"], "frameworks": test_frameworks}})
+            modules.update({"Test": {"requires": ["Core"], "frameworks": test_frameworks}})
 
             if self.options.gui:
                 ## Gui
@@ -865,16 +864,15 @@ class QtConan(ConanFile):
                         gui_frameworks.append("UIKit")
                 modules.update({
                     "Gui": {
-                        "internal_deps": ["Core", "DBus"],
-                        "requires": ["zlib::zlib"] + freetype() + png() + fontconfig() + xorg() +
-                                    opengl() + harfbuzz() + jpeg() + vulkan() + glib(),
+                        "requires": ["Core", "DBus", "zlib::zlib"] + freetype() + png() + fontconfig() +
+                                     xorg() + opengl() + harfbuzz() + jpeg() + vulkan() + glib(),
                         "system_libs": gui_system_libs,
                         "frameworks": gui_frameworks,
                     }
                 })
                 ## OpenGL
                 if self.options.get_safe("opengl", "no") != "no":
-                    modules.update({"OpenGL": {"internal_deps": ["Core", "Gui"], "requires": vulkan()}})
+                    modules.update({"OpenGL": {"requires": ["Core", "Gui"] + vulkan()}})
 
                 ## platforms plugins
                 if self.settings.os == "Android":
@@ -883,9 +881,8 @@ class QtConan(ConanFile):
                         "QAndroidIntegrationPlugin": {
                             "libs": ["qtforandroid"],
                             "type": "platforms",
-                            "internal_deps": ["Core", "Gui"],
+                            "requires": ["Core", "Gui"],
                             "system_libs": ["android", "jnigraphics"],
-                            "requires": ["sqlite3::sqlite3"],
                         }
                     })
                 else:
@@ -893,8 +890,7 @@ class QtConan(ConanFile):
                         "QMinimalIntegrationPlugin": {
                             "libs": ["qminimal"],
                             "type": "platforms",
-                            "internal_deps": ["Core", "Gui"],
-                            "requires": freetype(),
+                            "requires": ["Core", "Gui"] + freetype(),
                         }
                     })
                     if self.options.get_safe("with_fontconfig"):
@@ -902,8 +898,7 @@ class QtConan(ConanFile):
                             "QOffscreenIntegrationPlugin": {
                                 "libs": ["qoffscreen"],
                                 "type": "platforms",
-                                "internal_deps": ["Core", "Gui"],
-                                "requires": xorg(),
+                                "requires": ["Core", "Gui"] + xorg(),
                             }
                         })
                 if self.settings.os in ["Linux", "FreeBSD"]:
@@ -912,7 +907,7 @@ class QtConan(ConanFile):
                         "QXcbIntegrationPlugin": {
                             "libs": ["qxcb"],
                             "type": "platforms",
-                            "internal_deps": ["Core", "Gui"],
+                            "requires": ["Core", "Gui"],
                         }
                     })
                     # TODO: more plugins for xcb
@@ -924,8 +919,7 @@ class QtConan(ConanFile):
                         "QIOSIntegrationPlugin": {
                             "libs": ["qios"],
                             "type": "platforms",
-                            "internal_deps": ["Core", "Gui"],
-                            "requires": opengl(),
+                            "requires": ["Core", "Gui"] + opengl(),
                             "frameworks": iosintegrationplugin_frameworks,
                         }
                     })
@@ -934,18 +928,18 @@ class QtConan(ConanFile):
                         "QCocoaIntegrationPlugin": {
                             "libs": ["qcocoa"],
                             "type": "platforms",
-                            "internal_deps": ["Core", "Gui"],
+                            "requires": ["Core", "Gui"],
                             "frameworks": ["AppKit", "Carbon", "CoreServices", "CoreVideo",
                                            "IOKit", "IOSurface", "Metal", "QuartzCore"],
                         }
                     })
                 if self.settings.os == "Windows":
-                    windowsintegrationplugin_internal_deps = ["Core", "Gui"]
+                    windowsintegrationplugin_requires = ["Core", "Gui"]
                     windowsintegrationplugin_system_libs = ["advapi32", "dwmapi", "gdi32", "imm32", "ole32",
                                                             "oleaut32", "shell32", "shlwapi", "user32", "winmm",
                                                             "winspool", "wtsapi32"]
                     if self.options.get_safe("opengl", "no") != "no":
-                        windowsintegrationplugin_internal_deps.append("OpenGL")
+                        windowsintegrationplugin_requires.append("OpenGL")
                         if self.options.get_safe("opengl", "no") != "dynamic":
                             windowsintegrationplugin_system_libs.append("opengl32")
                     if self.settings.compiler == "gcc":
@@ -954,7 +948,7 @@ class QtConan(ConanFile):
                         "QWindowsIntegrationPlugin": {
                             "libs": ["qwindows"],
                             "type": "platforms",
-                            "internal_deps": windowsintegrationplugin_internal_deps,
+                            "requires": windowsintegrationplugin_requires,
                             "system_libs": windowsintegrationplugin_system_libs,
                         }
                     })
@@ -964,26 +958,25 @@ class QtConan(ConanFile):
                     "QICOPlugin": {
                         "libs": ["qico"],
                         "type": "imageformats",
-                        "internal_deps": ["Core", "Gui"],
+                        "requires": ["Core", "Gui"],
                     }
                 })
                 plugins.update({
                     "QJpegPlugin": {
                         "libs": ["qjpeg"],
                         "type": "imageformats",
-                        "internal_deps": ["Core", "Gui"],
-                        "requires": jpeg(),
+                        "requires": ["Core", "Gui"] + jpeg(),
                     }
                 })
                 plugins.update({
                     "QGifPlugin": {
                         "libs": ["qgif"],
                         "type": "imageformats",
-                        "internal_deps": ["Core", "Gui"],
+                        "requires": ["Core", "Gui"],
                     }
                 })
 
-                # TODO: generic plugins
+                ## TODO: generic plugins
 
                 if self.options.widgets:
                     ## Widgets
@@ -995,19 +988,19 @@ class QtConan(ConanFile):
                         widgets_frameworks.extend(["AppKit"])
                     modules.update({
                         "Widgets": {
-                            "internal_deps": ["Core", "Gui"],
+                            "requires": ["Core", "Gui"],
                             "system_libs": widgets_system_libs,
                             "frameworks": widgets_frameworks,
                         }
                     })
 
-                    # styles plugins
+                    ## styles plugins
                     if self.settings.os == "Android":
                         plugins.update({
                             "QAndroidStylePlugin": {
                                 "libs": ["qandroidstyle"],
                                 "type": "styles",
-                                "internal_deps": ["Core", "Gui", "Widgets"],
+                                "requires": ["Core", "Gui", "Widgets"],
                             }
                         })
                     if self.settings.os == "Macos":
@@ -1015,7 +1008,7 @@ class QtConan(ConanFile):
                             "QMacStylePlugin": {
                                 "libs": ["qmacstyle"],
                                 "type": "styles",
-                                "internal_deps": ["Core", "Gui", "Widgets"],
+                                "requires": ["Core", "Gui", "Widgets"],
                                 "frameworks": ["AppKit"]
                             }
                         })
@@ -1024,7 +1017,7 @@ class QtConan(ConanFile):
                             "QWindowsVistaStylePlugin": {
                                 "libs": ["qwindowsvistastyle"],
                                 "type": "styles",
-                                "internal_deps": ["Core", "Gui", "Widgets"],
+                                "requires": ["Core", "Gui", "Widgets"],
                                 "system_libs": ["gdi32", "user32", "uxtheme"]
                             }
                         })
@@ -1039,19 +1032,19 @@ class QtConan(ConanFile):
                         printsupport_system_libs.extend(["cups"])
                     modules.update({
                         "PrintSupport": {
-                            "internal_deps": ["Core", "Gui", "Widgets"],
+                            "requires": ["Core", "Gui", "Widgets"],
                             "system_libs": printsupport_system_libs,
                             "frameworks": printsupport_system_libs,
                         }
                     })
 
-                    # TODO: printsupport plugins
+                    ## TODO: printsupport plugins
 
                     ## OpenGLWidgets
                     if self.options.get_safe("opengl", "no") != "no":
-                        modules.update({"OpenGLWidgets": {"internal_deps": ["OpenGL", "Widgets"]}})
+                        modules.update({"OpenGLWidgets": {"requires": ["OpenGL", "Widgets"]}})
 
-            # TODO: add missing modules: DeviceDiscoverySupport, FbSupport
+            ## TODO: add missing modules: DeviceDiscoverySupport, FbSupport
 
             ## sql plugins
             if self.options.with_sqlite3:
@@ -1059,8 +1052,7 @@ class QtConan(ConanFile):
                     "QSQLiteDriverPlugin": {
                         "libs": ["qsqlite"],
                         "type": "sqldrivers",
-                        "internal_deps": ["Core", "Sql"],
-                        "requires": ["sqlite3::sqlite3"],
+                        "requires": ["Core", "Sql", "sqlite3::sqlite3"],
                     }
                 })
             if self.options.with_pq:
@@ -1068,32 +1060,35 @@ class QtConan(ConanFile):
                     "QPSQLDriverPlugin": {
                         "libs": ["qsqlpsql"],
                         "type": "sqldrivers",
-                        "internal_deps": ["Core", "Sql"],
-                        "requires": ["libpq::libpq"],
+                        "requires": ["Core", "Sql", "libpq::libpq"],
                     }
                 })
             if self.options.with_odbc:
-                # TODO: handle windows (odbc is a system lib on Windows)
-                if self.settings.os != "Windows":
-                    plugins.update({
-                        "QODBCDriverPlugin": {
-                            "libs": ["qsqlodbc"],
-                            "type": "sqldrivers",
-                            "internal_deps": ["Core", "Sql"],
-                            "requires": ["odbc::odbc"],
-                        }
-                    })
+                odbcdriverplugin_requires = ["Core", "Sql"]
+                odbcdriverplugin_system_libs = []
+                if self.options.os == "Windows":
+                    odbcdriverplugin_system_libs.append("odbc32")
+                else:
+                    odbcdriverplugin_requires.append("odbc::odbc")
+                plugins.update({
+                    "QODBCDriverPlugin": {
+                        "libs": ["qsqlodbc"],
+                        "type": "sqldrivers",
+                        "requires": odbcdriverplugin_requires,
+                        "system_libs": odbcdriverplugin_system_libs,
+                    }
+                })
 
             # qtsvg
             if self.options.qtsvg:
                 if self.options.gui:
-                    modules.update({"Svg": {"internal_deps": ["Gui"]}})
+                    modules.update({"Svg": {"requires": ["Gui"]}})
                     plugins.update({
-                        "QSvgIconPlugin": {"libs": ["qsvgicon"], "type": "iconengines", "internal_deps": ["Core", "Gui", "Svg"]},
-                        "QSvgPlugin": {"libs": ["qsvg"], "type": "imageformats", "internal_deps": ["Core", "Gui", "Svg"]},
+                        "QSvgIconPlugin": {"libs": ["qsvgicon"], "type": "iconengines", "requires": ["Core", "Gui", "Svg"]},
+                        "QSvgPlugin": {"libs": ["qsvg"], "type": "imageformats", "requires": ["Core", "Gui", "Svg"]},
                     })
                     if self.options.widgets:
-                        modules.update({"SvgWidgets": {"internal_deps": ["Core", "Gui", "Svg", "Widgets"]}})
+                        modules.update({"SvgWidgets": {"requires": ["Core", "Gui", "Svg", "Widgets"]}})
 
             # qtdeclarative
             if self.options.qtdeclarative:
@@ -1103,75 +1098,115 @@ class QtConan(ConanFile):
                 elif self.settings.os in ["Linux", "FreeBSD"] and not self.options.shared:
                     qml_system_libs = ["rt"]
                 modules.update({
-                    "Qml": {"internal_deps": ["Core", "Network"], "system_libs": qml_system_libs},
-                    "QmlModels": {"internal_deps": ["Core", "Qml"]},
-                    "QmlWorkerScript": {"internal_deps": ["Core", "Qml"]},
-                    "QmlLocalStorage": {"internal_deps": ["Core", "Qml", "Sql"]},
-                    "LabsSettings": {"internal_deps": ["Core", "Qml"]},
-                    "LabsQmlModels": {"internal_deps": ["Core", "Qml"]},
-                    "LabsFolderListModel": {"internal_deps": ["Qml", "QmlModels"]},
-                    "PacketProtocol": {"internal_deps": ["Core"]},
-                    "QmlDevTools": {"internal_deps": ["Core"]},
-                    "QmlDom": {"internal_deps": ["Core", "QmlDevTools"]},
-                    "QmlCompiler": {"internal_deps": ["Core", "QmlDevTools"]},
-                    "QmlDebug": {"internal_deps": ["Core", "Network", "PacketProtocol", "Qml"]},
+                    "Qml": {"requires": ["Core", "Network"], "system_libs": qml_system_libs},
+                    "QmlModels": {"requires": ["Core", "Qml"]},
+                    "QmlWorkerScript": {"requires": ["Core", "Qml"]},
+                    "QmlLocalStorage": {"requires": ["Core", "Qml", "Sql"]},
+                    "LabsSettings": {"requires": ["Core", "Qml"]},
+                    "LabsQmlModels": {"requires": ["Core", "Qml"]},
+                    "LabsFolderListModel": {"requires": ["Qml", "QmlModels"]},
+                    "PacketProtocol": {"requires": ["Core"]},
+                    "QmlDevTools": {"requires": ["Core"]},
+                    "QmlDom": {"requires": ["Core", "QmlDevTools"]},
+                    "QmlCompiler": {"requires": ["Core", "QmlDevTools"]},
+                    "QmlDebug": {"requires": ["Core", "Network", "PacketProtocol", "Qml"]},
                 })
                 plugins.update({
-                    "QQmlNativeDebugConnectorFactory": {"libs": ["qmldbg_native"], "type": "qmltooling", "internal_deps": ["Core", "PacketProtocol", "Qml"]},
-                    "QDebugMessageServiceFactory": {"libs": ["qmldbg_messages"], "type": "qmltooling", "internal_deps": ["Core", "PacketProtocol", "Qml"]},
-                    "QQmlProfilerServiceFactory": {"libs": ["qmldbg_profiler"], "type": "qmltooling", "internal_deps": ["Core", "PacketProtocol", "Qml"]},
-                    "QQmlDebuggerServiceFactory": {"libs": ["qmldbg_debugger"], "type": "qmltooling", "internal_deps": ["Core", "PacketProtocol", "Qml"]},
-                    "QQmlNativeDebugServiceFactory": {"libs": ["qmldbg_nativedebugger"], "type": "qmltooling", "internal_deps": ["Core", "PacketProtocol", "Qml"]},
-                    "QQmlDebugServerFactory": {"libs": ["qmldbg_server"], "type": "qmltooling", "internal_deps": ["PacketProtocol", "Qml"]},
-                    "QTcpServerConnectionFactory": {"libs": ["qmldbg_tcp"], "type": "qmltooling", "internal_deps": ["Network", "Qml"]},
-                    "QLocalClientConnectionFactory": {"libs": ["qmldbg_local"], "type": "qmltooling", "internal_deps": ["Qml"]},
+                    "QQmlNativeDebugConnectorFactory": {"libs": ["qmldbg_native"], "type": "qmltooling", "requires": ["Core", "PacketProtocol", "Qml"]},
+                    "QDebugMessageServiceFactory": {"libs": ["qmldbg_messages"], "type": "qmltooling", "requires": ["Core", "PacketProtocol", "Qml"]},
+                    "QQmlProfilerServiceFactory": {"libs": ["qmldbg_profiler"], "type": "qmltooling", "requires": ["Core", "PacketProtocol", "Qml"]},
+                    "QQmlDebuggerServiceFactory": {"libs": ["qmldbg_debugger"], "type": "qmltooling", "requires": ["Core", "PacketProtocol", "Qml"]},
+                    "QQmlNativeDebugServiceFactory": {"libs": ["qmldbg_nativedebugger"], "type": "qmltooling", "requires": ["Core", "PacketProtocol", "Qml"]},
+                    "QQmlDebugServerFactory": {"libs": ["qmldbg_server"], "type": "qmltooling", "requires": ["PacketProtocol", "Qml"]},
+                    "QTcpServerConnectionFactory": {"libs": ["qmldbg_tcp"], "type": "qmltooling", "requires": ["Network", "Qml"]},
+                    "QLocalClientConnectionFactory": {"libs": ["qmldbg_local"], "type": "qmltooling", "requires": ["Qml"]},
                 })
                 if self.options.gui:
-                    quick_internal_deps = ["Core", "Gui", "Qml", "QmlModels", "Network"]
+                    quick_requires = ["Core", "Gui", "Qml", "QmlModels", "Network"]
                     if self.options.get_safe("opengl", "no") != "no":
-                        quick_internal_deps.append("OpenGL")
+                        quick_requires.append("OpenGL")
                     quick_system_libs = []
                     if self.settings.os == "Windows":
                         quick_system_libs = ["user32"]
                     modules.update({
-                        "Quick": {"internal_deps": quick_internal_deps, "system_libs": quick_system_libs},
-                        "QuickShapes": {"internal_deps": ["Core", "Gui", "Qml", "Quick"]},
-                        "QuickLayouts": {"internal_deps": ["Core", "Gui", "Qml", "Quick"]},
-                        "QuickTest": {"internal_deps": ["Core", "Gui", "Qml", "Quick", "Test"]},
-                        "QuickParticles": {"internal_deps": ["Core", "Gui", "Qml", "Quick"]},
-                        "LabsAnimation": {"internal_deps": ["Qml", "Quick"]},
-                        "LabsWavefrontMesh": {"internal_deps": ["Core", "Gui", "Quick"]},
-                        "LabsSharedImage": {"internal_deps": ["Core", "Gui", "Quick"]},
+                        "Quick": {"requires": quick_requires, "system_libs": quick_system_libs},
+                        "QuickShapes": {"requires": ["Core", "Gui", "Qml", "Quick"]},
+                        "QuickLayouts": {"requires": ["Core", "Gui", "Qml", "Quick"]},
+                        "QuickTest": {"requires": ["Core", "Gui", "Qml", "Quick", "Test"]},
+                        "QuickParticles": {"requires": ["Core", "Gui", "Qml", "Quick"]},
+                        "LabsAnimation": {"requires": ["Qml", "Quick"]},
+                        "LabsWavefrontMesh": {"requires": ["Core", "Gui", "Quick"]},
+                        "LabsSharedImage": {"requires": ["Core", "Gui", "Quick"]},
                     })
                     plugins.update({
-                        "QQmlInspectorServiceFactory": {"libs": ["qmldbg_inspector"], "type": "qmltooling", "internal_deps": ["Core", "Gui", "PacketProtocol", "Qml", "Quick"]},
-                        "QQuickProfilerAdapterFactory": {"libs": ["qmldbg_quickprofiler"], "type": "qmltooling", "internal_deps": ["Core", "Gui", "PacketProtocol", "Qml", "Quick"]},
-                        "QQmlPreviewServiceFactory": {"libs": ["qmldbg_preview"], "type": "qmltooling", "internal_deps": ["Core", "Gui", "Network", "PacketProtocol", "Qml", "Quick"]},
+                        "QQmlInspectorServiceFactory": {"libs": ["qmldbg_inspector"], "type": "qmltooling", "requires": ["Core", "Gui", "PacketProtocol", "Qml", "Quick"]},
+                        "QQuickProfilerAdapterFactory": {"libs": ["qmldbg_quickprofiler"], "type": "qmltooling", "requires": ["Core", "Gui", "PacketProtocol", "Qml", "Quick"]},
+                        "QQmlPreviewServiceFactory": {"libs": ["qmldbg_preview"], "type": "qmltooling", "requires": ["Core", "Gui", "Network", "PacketProtocol", "Qml", "Quick"]},
                     })
                     if self.options.widgets:
-                        quickwidgets_internal_deps = ["Core", "Gui", "Qml", "Quick", "Widgets"]
+                        quickwidgets_requires = ["Core", "Gui", "Qml", "Quick", "Widgets"]
                         if self.options.get_safe("opengl", "no") != "no":
-                            quickwidgets_internal_deps.append("OpenGL")
-                        modules.update({"QuickWidgets": {"internal_deps": quickwidgets_internal_deps}})
+                            quickwidgets_requires.append("OpenGL")
+                        modules.update({"QuickWidgets": {"requires": quickwidgets_requires}})
 
             # qtactiveqt (WIP)
             if self.options.qtactiveqt and self.settings.os == "Windows":
                 if self.options.gui and self.options.widgets:
                     modules.update({
-                        "AxBase": {"internal_deps": ["Gui", "Widgets"]},
-                        "AxServer": {"internal_deps": ["AxBase"]},
-                        "AxContainer": {"internal_deps": ["AxBase"]},
+                        "AxBase": {"requires": ["Gui", "Widgets"]},
+                        "AxServer": {"requires": ["AxBase"]},
+                        "AxContainer": {"requires": ["AxBase"]},
                     })
 
-            # qttools (WIP)
+            # qttools
             if self.options.qttools:
                 if self.options.gui and self.options.widgets:
+                    uitools_requires = ["Core", "UiPlugin", "Gui", "Widgets"]
+                    designer_requires = ["Core", "Gui", "UiPlugin", "Widgets", "Xml"]
+                    if self.options.get_safe("opengl", "no") != "no":
+                        uitools_requires.extend(["OpenGL", "OpenGLWidgets"])
+                        designer_requires.extend(["OpenGL", "OpenGLWidgets"])
                     modules.update({
-                        "UiPlugin": {"internal_deps": ["Gui", "Widgets"]},
-                        "UiTools": {"internal_deps": ["UiPlugin", "Gui", "Widgets"]},
-                        "Designer": {"internal_deps": ["Gui", "UiPlugin", "Widgets", "Xml"]},
-                        "Help": {"internal_deps": ["Gui", "Sql", "Widgets"]},
+                        "UiPlugin": {"requires": ["Core", "Gui", "Widgets"], "header_only": True},
+                        "UiTools": {"requires": uitools_requires},
+                        "Designer": {"requires": designer_requires},
+                        "Help": {"requires": ["Core", "Gui", "Sql", "Widgets"]},
                     })
+
+                    # designer plugins only built if qt shared
+                    if self.options.shared:
+                        if False: # TODO: add condition based on availability of WebKitWidgets
+                            plugins.update({
+                                "QWebViewPlugin": {
+                                    "libs": ["qwebview"],
+                                    "type": "designer",
+                                    "requires": ["Core", "Designer", "Gui", "WebKitWidgets", "Widgets"],
+                                }
+                            })
+                        if self.options.qtactiveqt and self.settings.os == "Windows":
+                            plugins.update({
+                                "QAxWidgetPlugin": {
+                                    "libs": ["qaxwidget"],
+                                    "type": "designer",
+                                    "requires": ["AxContainer", "Core", "Designer", "Gui", "Widgets"],
+                                }
+                            })
+                        if self.options.qtdeclarative:
+                            plugins.update({
+                                "QQuickWidgetPlugin": {
+                                    "libs": ["qquickwidget"],
+                                    "type": "designer",
+                                    "requires": ["Core", "Designer", "Gui", "QuickWidgets", "Widgets"],
+                                }
+                            })
+                        if False: # TODO: add a condition
+                            plugins.update({
+                                "QView3DPlugin": {
+                                    "libs": ["view3d"],
+                                    "type": "designer",
+                                    "requires": ["Core", "Designer", "Gui", "OpenGL", "Widgets"],
+                                }
+                            })
 
             # TODO: qttranslations?
 
@@ -1181,35 +1216,35 @@ class QtConan(ConanFile):
             if self.options.get_safe("qtwayland"):
                 if self.options.gui:
                     modules.update({
-                        "WaylandClient": {"internal_deps": ["Gui"], "requires": ["wayland::wayland-client"]},
-                        "WaylandCompositor": {"internal_deps": ["Gui"], "requires": ["wayland::wayland-client"]},
+                        "WaylandClient": {"requires": ["Gui", "wayland::wayland-client"]},
+                        "WaylandCompositor": {"requires": ["Gui", "wayland::wayland-client"]},
                     })
 
             # qt3d (WIP)
             if self.options.qt3d:
                 if self.options.gui:
                     modules.update({
-                        "3DCore": {"internal_deps": ["Gui", "Network"]},
-                        "3DInput": {"internal_deps": ["3DCore", "Gui"]},
-                        "3DLogic": {"internal_deps": ["3DCore", "Gui"]},
+                        "3DCore": {"requires": ["Gui", "Network"]},
+                        "3DInput": {"requires": ["3DCore", "Gui"]},
+                        "3DLogic": {"requires": ["3DCore", "Gui"]},
                     })
                     if self.options.get_safe("opengl", "no") != "no":
                         modules.update({
-                            "3DRender": {"internal_deps": ["3DCore", "OpenGL"]},
-                            "3DAnimation": {"internal_deps": ["3DCore", "3DRender", "Gui"]},
-                            "3DExtras": {"internal_deps": ["Gui", "3DCore", "3DInput", "3DLogic", "3DRender"]},
+                            "3DRender": {"requires": ["3DCore", "OpenGL"]},
+                            "3DAnimation": {"requires": ["3DCore", "3DRender", "Gui"]},
+                            "3DExtras": {"requires": ["Gui", "3DCore", "3DInput", "3DLogic", "3DRender"]},
                         })
                     if self.options.qtdeclarative:
                         modules.update({
-                            "3DQuick": {"internal_deps": ["3DCore", "Gui", "Qml", "Quick"]},
-                            "3DQuickInput": {"internal_deps": ["3DCore", "3DInput", "3DQuick", "Gui", "Qml"]},
+                            "3DQuick": {"requires": ["3DCore", "Gui", "Qml", "Quick"]},
+                            "3DQuickInput": {"requires": ["3DCore", "3DInput", "3DQuick", "Gui", "Qml"]},
                         })
                     if self.options.get_safe("opengl", "no") != "no" and self.options.qtdeclarative:
                         modules.update({
-                            "3DQuickAnimation": {"internal_deps": ["3DAnimation", "3DCore", "3DQuick", "3DRender", "Gui", "Qml"]},
-                            "3DQuickExtras": {"internal_deps": ["3DCore", "3DExtras", "3DInput", "3DQuick", "3DRender", "Gui", "Qml"]},
-                            "3DQuickRender": {"internal_deps": ["3DCore", "3DQuick", "3DRender", "Gui", "Qml"]},
-                            "3DQuickScene2D": {"internal_deps": ["3DCore", "3DQuick", "3DRender", "Gui", "Qml"]},
+                            "3DQuickAnimation": {"requires": ["3DAnimation", "3DCore", "3DQuick", "3DRender", "Gui", "Qml"]},
+                            "3DQuickExtras": {"requires": ["3DCore", "3DExtras", "3DInput", "3DQuick", "3DRender", "Gui", "Qml"]},
+                            "3DQuickRender": {"requires": ["3DCore", "3DQuick", "3DRender", "Gui", "Qml"]},
+                            "3DQuickScene2D": {"requires": ["3DCore", "3DQuick", "3DRender", "Gui", "Qml"]},
                         })
 
                 _create_plugin("DefaultGeometryLoaderPlugin", "defaultgeometryloader", "geometryloaders", ["3DCore", "3DRender", "Gui"])
@@ -1219,20 +1254,20 @@ class QtConan(ConanFile):
             if self.options.qtimageformats:
                 if self.options.gui:
                     plugins.update({
-                        "QTgaPlugin": {"libs": ["qtga"], "type": "imageformats", "internal_deps": ["Core", "Gui"]},
-                        "QWbmpPlugin": {"libs": ["qwbmp"], "type": "imageformats", "internal_deps": ["Core", "Gui"]},
-                        "QTiffPlugin": {"libs": ["qtiff"], "type": "imageformats", "internal_deps": ["Core", "Gui"], "requires": ["libtiff::libtiff"]},
-                        "QWebpPlugin": {"libs": ["qwebp"], "type": "imageformats", "internal_deps": ["Core", "Gui"], "requires": ["libwebp::libwebp"]},
-                        "QICNSPlugin": {"libs": ["qicns"], "type": "imageformats", "internal_deps": ["Core", "Gui"]},
+                        "QTgaPlugin": {"libs": ["qtga"], "type": "imageformats", "requires": ["Core", "Gui"]},
+                        "QWbmpPlugin": {"libs": ["qwbmp"], "type": "imageformats", "requires": ["Core", "Gui"]},
+                        "QTiffPlugin": {"libs": ["qtiff"], "type": "imageformats", "requires": ["Core", "Gui", "libtiff::libtiff"]},
+                        "QWebpPlugin": {"libs": ["qwebp"], "type": "imageformats", "requires": ["Core", "Gui", "libwebp::libwebp"]},
+                        "QICNSPlugin": {"libs": ["qicns"], "type": "imageformats", "requires": ["Core", "Gui"]},
                         # TODO: eventually add an option for Apple OS: if jasper is not used, QMacJp2Plugin is created instead
-                        "QJp2Plugin": {"libs": ["qjp2"], "type": "imageformats", "internal_deps": ["Core", "Gui"], "requires": ["jasper::jasper"]},
+                        "QJp2Plugin": {"libs": ["qjp2"], "type": "imageformats", "requires": ["Core", "Gui", "jasper::jasper"]},
                     })
                     if tools.is_apple_os(self.settings.os):
                         plugins.update({
                             "QMacHeifPlugin": {
                                 "libs": ["qmacheif"],
                                 "type": "imageformats",
-                                "internal_deps": ["Core", "Gui"],
+                                "requires": ["Core", "Gui"],
                                 "frameworks": ["CoreFoundation", "CoreGraphics", "ImageIO"],
                             }
                         })
@@ -1241,31 +1276,31 @@ class QtConan(ConanFile):
             if self.options.qtquickcontrols2:
                 if self.options.gui and self.options.qtdeclarative:
                     modules.update({
-                        "QuickTemplates2": {"internal_deps": ["Core", "Gui", "Qml", "Quick", "QmlModels"]},
-                        "QuickControls2": {"internal_deps": ["Core", "Gui", "Qml", "Quick", "QuickTemplates2"]},
-                        "QuickControls2Impl": {"internal_deps": ["Core", "Gui", "Qml", "Quick", "QuickTemplates2"]},
+                        "QuickTemplates2": {"requires": ["Core", "Gui", "Qml", "Quick", "QmlModels"]},
+                        "QuickControls2": {"requires": ["Core", "Gui", "Qml", "Quick", "QuickTemplates2"]},
+                        "QuickControls2Impl": {"requires": ["Core", "Gui", "Qml", "Quick", "QuickTemplates2"]},
                     })
 
             # qtcharts
             if self.options.qtcharts:
                 if self.options.gui and self.options.widgets:
-                    charts_internal_deps = ["Core", "Gui", "Widgets"]
+                    charts_requires = ["Core", "Gui", "Widgets"]
                     if self.options.get_safe("opengl", "no") != "no":
-                        charts_internal_deps.extend(["OpenGL", "OpenGLWidgets"])
+                        charts_requires.extend(["OpenGL", "OpenGLWidgets"])
                     charts_system_libs = []
                     if self.settings.os == "Windows":
                         charts_system_libs.append("user32")
-                    modules.update({"Charts": {"internal_deps": charts_internal_deps, "system_libs": charts_system_libs}})
+                    modules.update({"Charts": {"requires": charts_requires, "system_libs": charts_system_libs}})
 
             # qtdatavis3d (WIP)
             if self.options.qtdatavis3d:
                 if self.options.gui and self.options.get_safe("opengl", "no") != "no" and self.options.qtdeclarative:
-                    modules.update({"DataVisualization": {"internal_deps": ["Gui", "OpenGL", "Qml", "Quick"]}})
+                    modules.update({"DataVisualization": {"requires": ["Gui", "OpenGL", "Qml", "Quick"]}})
 
             # qtvirtualkeyboard (WIP)
             if self.options.qtvirtualkeyboard:
                 if self.options.gui and self.options.qtdeclarative:
-                    modules.update({"VirtualKeyboard": {"internal_deps": ["Gui", "Qml", "Quick"]}})
+                    modules.update({"VirtualKeyboard": {"requires": ["Gui", "Qml", "Quick"]}})
 
                 _create_plugin("QVirtualKeyboardPlugin", "qtvirtualkeyboardplugin", "platforminputcontexts", ["Gui", "Qml", "VirtualKeyboard"])
                 _create_plugin("QtVirtualKeyboardHangulPlugin", "qtvirtualkeyboard_hangul", "virtualkeyboard", ["Gui", "Qml", "VirtualKeyboard"])
@@ -1277,38 +1312,38 @@ class QtConan(ConanFile):
                 modules.update({"StateMachine": {}})
                 modules.update({"Scxml": {}})
                 if self.options.qtdeclarative:
-                    modules.update({"StateMachineQml": {"internal_deps": ["StateMachine", "Qml"]}})
-                    modules.update({"ScxmlQml": {"internal_deps": ["Scxml", "Qml"]}})
+                    modules.update({"StateMachineQml": {"requires": ["StateMachine", "Qml"]}})
+                    modules.update({"ScxmlQml": {"requires": ["Scxml", "Qml"]}})
 
                 _create_plugin("QScxmlEcmaScriptDataModelPlugin", "qscxmlecmascriptdatamodel", "scxmldatamodel", ["Scxml", "Qml"])
 
             # qtnetworkauth (WIP)
             if self.options.qtnetworkauth:
-                modules.update({"NetworkAuth": {"internal_deps": ["Network"]}})
+                modules.update({"NetworkAuth": {"requires": ["Network"]}})
 
             # qtlottie (WIP)
             if self.options.qtlottie:
                 if self.options.gui:
-                    modules.update({"Bodymovin": {"internal_deps": ["Gui"]}})
+                    modules.update({"Bodymovin": {"requires": ["Gui"]}})
 
             # TODO: qtquicktimeline?
 
             # qtquick3d (WIP)
             if self.options.qtquick3d:
                 if self.options.gui:
-                    modules.update({"Quick3DUtils": {"internal_deps": ["Gui"]}})
+                    modules.update({"Quick3DUtils": {"requires": ["Gui"]}})
                     if self.options.qtdeclarative:
-                        modules.update({"Quick3DAssetImport": {"internal_deps": ["Gui", "Qml", "Quick3DUtils"]}})
+                        modules.update({"Quick3DAssetImport": {"requires": ["Gui", "Qml", "Quick3DUtils"]}})
                         if self.options.qtshadertools:
                             modules.update({
-                                "Quick3DRuntimeRender": {"internal_deps": ["Gui", "Quick", "Quick3DAssetImport", "Quick3DUtils", "ShaderTools"]},
-                                "Quick3D": {"internal_deps": ["Gui", "Qml", "Quick", "Quick3DRuntimeRender"]},
+                                "Quick3DRuntimeRender": {"requires": ["Gui", "Quick", "Quick3DAssetImport", "Quick3DUtils", "ShaderTools"]},
+                                "Quick3D": {"requires": ["Gui", "Qml", "Quick", "Quick3DRuntimeRender"]},
                             })
 
             # qtshadertools (WIP)
             if self.options.qtshadertools:
                 if self.options.gui:
-                    modules.update({"ShaderTools": {"internal_deps": ["Gui"]}})
+                    modules.update({"ShaderTools": {"requires": ["Gui"]}})
 
             # qt5compat (WIP)
             if self.options.qt5compat:
@@ -1316,15 +1351,15 @@ class QtConan(ConanFile):
 
             # qtcoap (WIP)
             if self.options.get_safe("qtcoap"):
-                modules.update({"Coap": {"internal_deps": ["Network"]}})
+                modules.update({"Coap": {"requires": ["Network"]}})
 
             # qtmqtt (WIP)
             if self.options.get_safe("qtmqtt"):
-                modules.update({"Mqtt": {"internal_deps": ["Network"]}})
+                modules.update({"Mqtt": {"requires": ["Network"]}})
 
             # qtopcua (WIP)
             if self.options.get_safe("qtopcua"):
-                modules.update({"OpcUa": {"internal_deps": ["Network"]}})
+                modules.update({"OpcUa": {"requires": ["Network"]}})
 
                 _create_plugin("QOpen62541Plugin", "open62541_backend", "opcua", ["Network", "OpcUa"])
                 _create_plugin("QUACppPlugin", "uacpp_backend", "opcua", ["Network", "OpcUa"])
@@ -1345,11 +1380,7 @@ class QtConan(ConanFile):
             self.cpp_info.components["qtQmlImportScanner"].names["cmake_find_package_multi"] = "QmlImportScanner"
             self.cpp_info.components["qtQmlImportScanner"].requires = _get_corrected_reqs(["Qml"])
 
-        if self.options.qttools and self.options.gui and self.options.widgets:
-            self.cpp_info.components["qtUiPlugin"].libs = [] # this is a collection of abstract classes, so this is header-only
-            self.cpp_info.components["qtUiPlugin"].libdirs = []
-
-        if self.options.qtactiveqt and self.options.gui and self.options.widgets:
+        if self.options.qtactiveqt and self.settings.os == "Windows" and self.options.gui and self.options.widgets:
             self.cpp_info.components["qtAxServer"].system_libs.append("shell32")
             self.cpp_info.components["qtAxServer"].defines.append("QAXSERVER")
 
