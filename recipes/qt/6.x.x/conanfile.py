@@ -244,11 +244,11 @@ class QtConan(ConanFile):
             self.requires("wayland/1.19.0")
         if self.options.with_brotli:
             self.requires("brotli/1.0.9")
-        if self.options.qtimageformats:
+        if self.options.get_safe("qtimageformats"):
             self.requires("jasper/2.0.32")
             self.requires("libtiff/4.2.0")
             self.requires("libwebp/1.2.0")
-            # TODO: add libmng to create QMngPlugin
+            # TODO: add libmng for QMngPlugin
 
     @property
     def _minimum_compilers_version(self):
@@ -284,26 +284,6 @@ class QtConan(ConanFile):
 
         if self.options.widgets and not self.options.gui:
             raise ConanInvalidConfiguration("widgets requires gui")
-        if self.options.qtsvg and not self.options.gui:
-            raise ConanInvalidConfiguration("qtsvg requires gui")
-        if self.options.qtdeclarative and not self.options.qtsvg:
-            raise ConanInvalidConfiguration("qtdeclarative requires qtsvg")
-        if self.options.qtactiveqt and not (self.options.gui and self.options.widgets):
-            raise ConanInvalidConfiguration("qtactiveqt requires gui and widgets")
-        if self.options.qttools and not (self.options.qtactiveqt and self.options.qtdeclarative):
-            raise ConanInvalidConfiguration("qttools requires qtactiveqt and qtdeclarative")
-        if self.options.qtimageformats and not self.options.gui:
-            raise ConanInvalidConfiguration("qtimageformats requires gui")
-        if self.options.qtquickcontrols2 and not (self.options.gui and self.options.qtdeclarative and self.options.qtsvg and self.options.qtimageformats):
-            raise ConanInvalidConfiguration("qtquickcontrols2 requires gui, qtdeclarative, qtsvg and qtimageformats")
-        if self.options.qtcharts and not (self.options.gui and self.options.widgets):
-            raise ConanInvalidConfiguration("qtcharts requires gui and widgets")
-        if self.options.qtdatavis3d and not self.options.qtdeclarative:
-            raise ConanInvalidConfiguration("qtdatavis3d requires qtdeclarative")
-        if self.options.qtlottie and not self.options.qtdeclarative:
-            raise ConanInvalidConfiguration("qtlottie requires qtdeclarative")
-        if self.options.qtquick3d and not (self.options.qtdeclarative and self.options.qtshadertools):
-            raise ConanInvalidConfiguration("qtquick3d requires qtdeclarative and qtshadertools")
 
     def package_id(self):
         del self.info.options.cross_compile
@@ -315,11 +295,11 @@ class QtConan(ConanFile):
                 self.info.settings.compiler.runtime = "MT/MTd"
 
     def build_requirements(self):
-        self.build_requires("cmake/3.20.2")
+        self.build_requires("cmake/3.20.4")
         self.build_requires("ninja/1.10.2")
         self.build_requires("pkgconf/1.7.4")
         if self.settings.compiler == "Visual Studio":
-            self.build_requires('strawberryperl/5.30.0.1')
+            self.build_requires("strawberryperl/5.30.0.1")
 
     def source(self):
         tools.get(**self.conan_data["sources"][self.version],
@@ -504,6 +484,14 @@ class QtConan(ConanFile):
             else:
                 self._cmake.definitions["FEATURE_%s" % conf_arg] = "OFF"
                 self._cmake.definitions["FEATURE_system_%s" % conf_arg] = "OFF"
+
+        if self.options.get_safe("qtimageformats"):
+            self._cmake.definitions["FEATURE_tiff"] = "ON"
+            self._cmake.definitions["FEATURE_system_tiff"] = "ON"
+            self._cmake.definitions["FEATURE_webp"] = "ON"
+            self._cmake.definitions["FEATURE_system_webp"] = "ON"
+            self._cmake.definitions["FEATURE_jasper"] = "ON"
+            self._cmake.definitions["FEATURE_mng"] = "OFF"
 
         if self.settings.os == "Macos":
             self._cmake.definitions["FEATURE_framework"] = "OFF"
@@ -701,28 +689,31 @@ class QtConan(ConanFile):
                 reqs.append(r if "::" in r else "qt%s" % r)
             return reqs
 
-        def _create_module(module, requires=[]):
+        def _create_module(module, requires, system_libs, frameworks, header_only=False):
             componentname = "qt%s" % module
             assert componentname not in self.cpp_info.components, "Module %s already present in self.cpp_info.components" % module
             self.cpp_info.components[componentname].names["cmake_find_package"] = module
             self.cpp_info.components[componentname].names["cmake_find_package_multi"] = module
-            self.cpp_info.components[componentname].libs = ["Qt6%s%s" % (module, libsuffix)]
+            if not header_only:
+                self.cpp_info.components[componentname].libs = ["Qt6%s%s" % (module, libsuffix)]
             self.cpp_info.components[componentname].includedirs = ["include", os.path.join("include", "Qt%s" % module)]
             self.cpp_info.components[componentname].defines = ["QT_%s_LIB" % module.upper()]
             self.cpp_info.components[componentname].requires = _get_corrected_reqs(requires)
+            self.cpp_info.components[componentname].system_libs = system_libs
+            self.cpp_info.components[componentname].frameworks = frameworks
 
-        def _create_plugin(pluginname, libname, type, requires):
+        def _create_plugin(pluginname, libs, type, requires, system_libs, frameworks):
             componentname = "qt%s" % pluginname
             assert componentname not in self.cpp_info.components, "Plugin %s already present in self.cpp_info.components" % pluginname
             self.cpp_info.components[componentname].names["cmake_find_package"] = pluginname
             self.cpp_info.components[componentname].names["cmake_find_package_multi"] = pluginname
             if not self.options.shared:
-                self.cpp_info.components[componentname].libs = [libname + libsuffix]
+                self.cpp_info.components[componentname].libs = ["{}{}".format(libname, libsuffix) for libname in libs]
             self.cpp_info.components[componentname].libdirs = [os.path.join("res", "archdatadir", "plugins", type)]
             self.cpp_info.components[componentname].includedirs = []
-            if "Core" not in requires:
-                requires.append("Core")
             self.cpp_info.components[componentname].requires = _get_corrected_reqs(requires)
+            self.cpp_info.components[componentname].system_libs = system_libs
+            self.cpp_info.components[componentname].frameworks = frameworks
 
         modules = self._qtbase_components["modules"]
         plugins = self._qtbase_components["plugins"]
@@ -732,7 +723,7 @@ class QtConan(ConanFile):
         if self.options.qtdeclarative:
             modules.update(self._qtdeclarative_components["modules"])
             plugins.update(self._qtdeclarative_components["plugins"])
-        if self.options.qtactiveqt:
+        if self.options.get_safe("qtactiveqt"):
             modules.update(self._qtactiveqt_components["modules"])
             plugins.update(self._qtactiveqt_components["plugins"])
         if self.options.qttools:
@@ -741,31 +732,31 @@ class QtConan(ConanFile):
         if self.options.get_safe("qtwayland"):
             modules.update(self._qtwayland_components["modules"])
             plugins.update(self._qtwayland_components["plugins"])
-        if self.options.qt3d:
+        if self.options.get_safe("qt3d"):
             modules.update(self._qt3d_components["modules"])
             plugins.update(self._qt3d_components["plugins"])
-        if self.options.qtimageformats:
+        if self.options.get_safe("qtimageformats"):
             modules.update(self._qtimageformats_components["modules"])
             plugins.update(self._qtimageformats_components["plugins"])
         if self.options.qtquickcontrols2:
             modules.update(self._qtquickcontrols2_components["modules"])
             plugins.update(self._qtquickcontrols2_components["plugins"])
-        if self.options.qtcharts:
+        if self.options.get_safe("qtcharts"):
             modules.update(self._qtcharts_components["modules"])
             plugins.update(self._qtcharts_components["plugins"])
-        if self.options.qtdatavis3d:
+        if self.options.get_safe("qtdatavis3d"):
             modules.update(self._qtdatavis3d_components["modules"])
             plugins.update(self._qtdatavis3d_components["plugins"])
-        if self.options.qtvirtualkeyboard:
+        if self.options.get_safe("qtvirtualkeyboard"):
             modules.update(self._qtvirtualkeyboard_components["modules"])
             plugins.update(self._qtvirtualkeyboard_components["plugins"])
-        if self.options.qtscxml:
+        if self.options.get_safe("qtscxml"):
             modules.update(self._qtscxml_components["modules"])
             plugins.update(self._qtscxml_components["plugins"])
-        if self.options.qtnetworkauth:
+        if self.options.get_safe("qtnetworkauth"):
             modules.update(self._qtnetworkauth_components["modules"])
             plugins.update(self._qtnetworkauth_components["plugins"])
-        if self.options.qtlottie:
+        if self.options.get_safe("qtlottie"):
             modules.update(self._qtlottie_components["modules"])
             plugins.update(self._qtlottie_components["plugins"])
         if self.options.qtquick3d:
@@ -787,7 +778,20 @@ class QtConan(ConanFile):
             modules.update(self._qtopcua_components["modules"])
             plugins.update(self._qtopcua_components["plugins"])
 
-        # TODO: loop in modules and plugins to create components
+        # Create modules and plugins
+        for module, properties in modules.items():
+            requires = properties.get("requires", [])
+            system_libs = properties.get("system_libs", [])
+            frameworks = properties.get("frameworks", [])
+            header_only = properties.get("header_only", False)
+            _create_module(module, requires, system_libs, frameworks, header_only=header_only)
+        for pluginname, properties in plugins.items():
+            libs = properties.get("libs", [])
+            type = properties.get("type", "")
+            requires = properties.get("requires", [])
+            system_libs = properties.get("system_libs", [])
+            frameworks = properties.get("frameworks", [])
+            _create_plugin(pluginname, libs, type, requires, system_libs, frameworks)
 
         if tools.Version(self.version) < "6.1.0":
             self.cpp_info.components["qtCore"].libs.append("Qt6Core_qobject%s" % libsuffix)
@@ -799,7 +803,7 @@ class QtConan(ConanFile):
             self.cpp_info.components["qtQmlImportScanner"].names["cmake_find_package_multi"] = "QmlImportScanner"
             self.cpp_info.components["qtQmlImportScanner"].requires = _get_corrected_reqs(["Qml"])
 
-        if self.options.qtactiveqt and self.settings.os == "Windows" and self.options.gui and self.options.widgets:
+        if self.options.get_safe("qtactiveqt") and self.settings.os == "Windows" and self.options.gui and self.options.widgets:
             self.cpp_info.components["qtAxServer"].system_libs.append("shell32")
             self.cpp_info.components["qtAxServer"].defines.append("QAXSERVER")
 
@@ -831,7 +835,7 @@ class QtConan(ConanFile):
                     self.cpp_info.components[component].sharedlinkflags.extend(obj_files)
 
     @property
-    def _qtbase_components(self):
+    def _qtbase_components(self): # WIP
         def pcre2():
             return ["pcre2::pcre2"] if self.options.with_pcre2 else []
 
@@ -889,6 +893,8 @@ class QtConan(ConanFile):
         modules = {}
         plugins = {}
 
+        # TODO: Entrypoint library for Windows and iOS
+
         # Core
         core_system_libs = []
         core_frameworks = []
@@ -922,7 +928,7 @@ class QtConan(ConanFile):
         network_frameworks = []
         if self.settings.os == "Windows":
             network_system_libs.extend(["advapi32", "dnsapi", "iphlpapi"])
-            # which condition?
+            # TODO: what is the condition?
             # network_system_libs.extend(["Crypt32", "Secur32", "bcrypt", "ncrypt"])
         elif self.settings.os in ["Linux", "FreeBSD"]:
             network_system_libs.extend(["dl"])
@@ -960,7 +966,7 @@ class QtConan(ConanFile):
             if self.settings.os == "Windows":
                 gui_system_libs.extend(["advapi32", "gdi32", "ole32", "shell32",
                                         "user32", "d3d11", "dxgi", "dxguid"])
-                # which condition?
+                # TODO: what is the condition?
                 # gui_system_libs.extend(["d2d1", "dwrite", "uuid"])
                 if self.settings.compiler == "gcc":
                     gui_system_libs.append("uuid")
@@ -987,17 +993,7 @@ class QtConan(ConanFile):
                 modules.update({"OpenGL": {"requires": ["Core", "Gui"] + vulkan()}})
 
             # platforms plugins
-            if self.settings.os == "Android":
-                # TODO: should link to EGL also
-                plugins.update({
-                    "QAndroidIntegrationPlugin": {
-                        "libs": ["qtforandroid"],
-                        "type": "platforms",
-                        "requires": ["Core", "Gui"],
-                        "system_libs": ["android", "jnigraphics"],
-                    }
-                })
-            else:
+            if self.settings.os != "Android":
                 plugins.update({
                     "QMinimalIntegrationPlugin": {
                         "libs": ["qminimal"],
@@ -1013,8 +1009,17 @@ class QtConan(ConanFile):
                             "requires": ["Core", "Gui"] + xorg(),
                         }
                     })
-            if self.settings.os in ["Linux", "FreeBSD"]:
-                # TODO: depends on Qt::XcbQpaPrivate
+            if self.settings.os == "Android":
+                # TODO: should link to EGL also
+                plugins.update({
+                    "QAndroidIntegrationPlugin": {
+                        "libs": ["qtforandroid"],
+                        "type": "platforms",
+                        "requires": ["Core", "Gui"],
+                        "system_libs": ["android", "jnigraphics"],
+                    }
+                })
+            elif self.settings.os in ["Linux", "FreeBSD"]:
                 plugins.update({
                     "QXcbIntegrationPlugin": {
                         "libs": ["qxcb"],
@@ -1023,7 +1028,7 @@ class QtConan(ConanFile):
                     }
                 })
                 # TODO: more plugins for xcb
-            if self.settings.os in ["iOS", "tvOS"]:
+            elif self.settings.os in ["iOS", "tvOS"]:
                 iosintegrationplugin_frameworks = ["AudioToolbox", "Foundation", "Metal", "QuartzCore", "UIKit"]
                 if self.settings.os != "tvOS":
                     iosintegrationplugin_frameworks.append("AssetsLibrary")
@@ -1035,7 +1040,7 @@ class QtConan(ConanFile):
                         "frameworks": iosintegrationplugin_frameworks,
                     }
                 })
-            if self.settings.os == "Macos":
+            elif self.settings.os == "Macos":
                 plugins.update({
                     "QCocoaIntegrationPlugin": {
                         "libs": ["qcocoa"],
@@ -1045,23 +1050,40 @@ class QtConan(ConanFile):
                                        "IOKit", "IOSurface", "Metal", "QuartzCore"],
                     }
                 })
-            if self.settings.os == "Windows":
-                windowsintegrationplugin_requires = ["Core", "Gui"]
-                windowsintegrationplugin_system_libs = ["advapi32", "dwmapi", "gdi32", "imm32", "ole32",
-                                                        "oleaut32", "shell32", "shlwapi", "user32", "winmm",
-                                                        "winspool", "wtsapi32"]
+            elif self.settings.os == "Windows":
+                win_int_plugin_reqs = ["Core", "Gui"]
+                win_int_plugin_system_libs = ["advapi32", "dwmapi", "gdi32", "imm32", "ole32", "oleaut32",
+                                              "shell32", "shlwapi", "user32", "winmm", "winspool", "wtsapi32"]
                 if self.options.get_safe("opengl", "no") != "no":
-                    windowsintegrationplugin_requires.append("OpenGL")
+                    win_int_plugin_reqs.append("OpenGL")
                     if self.options.get_safe("opengl", "no") != "dynamic":
-                        windowsintegrationplugin_system_libs.append("opengl32")
+                        win_int_plugin_system_libs.append("opengl32")
                 if self.settings.compiler == "gcc":
-                    windowsintegrationplugin_system_libs.append("uuid")
+                    win_int_plugin_system_libs.append("uuid")
                 plugins.update({
                     "QWindowsIntegrationPlugin": {
                         "libs": ["qwindows"],
                         "type": "platforms",
-                        "requires": windowsintegrationplugin_requires,
-                        "system_libs": windowsintegrationplugin_system_libs,
+                        "requires": win_int_plugin_reqs,
+                        "system_libs": win_int_plugin_system_libs,
+                    }
+                })
+                win_d2d_int_plugin_reqs = ["Core", "Gui"]
+                win_d2d_int_plugin_system_libs = ["advapi32", "d2d1", "d3d11", "dwmapi", "dwrite", "dxgi",
+                                                  "dxguid", "gdi32", "imm32", "ole32", "oleaut32", "shell32",
+                                                  "shlwapi", "user32", "version", "winmm", "winspool", "wtsapi32"]
+                if self.options.get_safe("opengl", "no") != "no":
+                    win_d2d_int_plugin_reqs.append("OpenGL")
+                    if self.options.get_safe("opengl", "no") != "dynamic":
+                        win_d2d_int_plugin_system_libs.append("opengl32")
+                if self.settings.compiler == "gcc":
+                    win_d2d_int_plugin_system_libs.append("uuid")
+                plugins.update({
+                    "QWindowsDirect2DIntegrationPlugin": {
+                        "libs": ["qdirect2d"],
+                        "type": "platforms",
+                        "requires": win_d2d_int_plugin_reqs,
+                        "system_libs": win_d2d_int_plugin_system_libs,
                     }
                 })
 
@@ -1073,13 +1095,14 @@ class QtConan(ConanFile):
                     "requires": ["Core", "Gui"],
                 }
             })
-            plugins.update({
-                "QJpegPlugin": {
-                    "libs": ["qjpeg"],
-                    "type": "imageformats",
-                    "requires": ["Core", "Gui"] + jpeg(),
-                }
-            })
+            if bool(self.options.with_libjpeg):
+                plugins.update({
+                    "QJpegPlugin": {
+                        "libs": ["qjpeg"],
+                        "type": "imageformats",
+                        "requires": ["Core", "Gui"] + jpeg(),
+                    }
+                })
             plugins.update({
                 "QGifPlugin": {
                     "libs": ["qgif"],
@@ -1088,7 +1111,16 @@ class QtConan(ConanFile):
                 }
             })
 
-            # TODO: generic plugins
+            # generic plugins
+            if self.settings.os != "Android":
+                plugins.update({
+                    "QTuioTouchPlugin": {
+                        "libs": ["qtuiotouchplugin"],
+                        "type": "generic",
+                        "requires": ["Core", "Gui", "Network"],
+                    }
+                })
+                # TODO: there are more optional generic plugins but don't seem to be enabled by recipe
 
             if self.options.widgets:
                 ## Widgets
@@ -1097,7 +1129,7 @@ class QtConan(ConanFile):
                 if self.settings.os == "Windows":
                     widgets_system_libs.extend(["dwmapi", "shell32", "uxtheme"])
                 elif self.settings.os == "Macos":
-                    widgets_frameworks.extend(["AppKit"])
+                    widgets_frameworks.append("AppKit")
                 modules.update({
                     "Widgets": {
                         "requires": ["Core", "Gui"],
@@ -1115,7 +1147,7 @@ class QtConan(ConanFile):
                             "requires": ["Core", "Gui", "Widgets"],
                         }
                     })
-                if self.settings.os == "Macos":
+                elif self.settings.os == "Macos":
                     plugins.update({
                         "QMacStylePlugin": {
                             "libs": ["qmacstyle"],
@@ -1124,7 +1156,7 @@ class QtConan(ConanFile):
                             "frameworks": ["AppKit"]
                         }
                     })
-                if self.settings.os == "Windows":
+                elif self.settings.os == "Windows":
                     plugins.update({
                         "QWindowsVistaStylePlugin": {
                             "libs": ["qwindowsvistastyle"],
@@ -1141,7 +1173,7 @@ class QtConan(ConanFile):
                     printsupport_system_libs.extend(["gdi32", "user32", "comdlg32", "winspool"])
                 elif self.settings.os == "Macos":
                     printsupport_frameworks.extend(["ApplicationServices", "AppKit"])
-                    printsupport_system_libs.extend(["cups"])
+                    printsupport_system_libs.append("cups")
                 modules.update({
                     "PrintSupport": {
                         "requires": ["Core", "Gui", "Widgets"],
@@ -1150,7 +1182,7 @@ class QtConan(ConanFile):
                     }
                 })
 
-                # TODO: printsupport plugins
+                # TODO: printsupport plugins (QCupsPrinterSupportPlugin only if cups found on Unix systems but not Apple)
 
                 # OpenGLWidgets
                 if self.options.get_safe("opengl", "no") != "no":
@@ -1178,7 +1210,7 @@ class QtConan(ConanFile):
         if self.options.with_odbc:
             odbcdriverplugin_requires = ["Core", "Sql"]
             odbcdriverplugin_system_libs = []
-            if self.options.os == "Windows":
+            if self.settings.os == "Windows":
                 odbcdriverplugin_system_libs.append("odbc32")
             else:
                 odbcdriverplugin_requires.append("odbc::odbc")
@@ -1190,6 +1222,45 @@ class QtConan(ConanFile):
                     "system_libs": odbcdriverplugin_system_libs,
                 }
             })
+
+        # network plugins
+        # TODO: plugin name / type / libs are different in dev branch, they may change in 6.2.0
+        if tools.Version(self.version) >= "6.1.0":
+            if self.settings.os == "Windows":
+                plugins.update({
+                    "QNetworkListManagerNetworkInformationBackend": {
+                        "libs": ["networklistmanagernetworkinformationbackend"],
+                        "type": "networkinformationbackends",
+                        "requires": ["Network"],
+                    }
+                })
+            elif self.settings.os in ["Linux", "FreeBSD"]:
+                plugins.update({
+                    "QNetworkManagerNetworkInformationBackend": {
+                        "libs": ["networkmanagernetworkinformationbackend"],
+                        "type": "networkinformationbackends",
+                        "requires": ["DBus", "Network"],
+                    }
+                })
+            elif tools.is_apple_os(self.settings.os):
+                plugins.update({
+                    "QSCNetworkReachabilityNetworkInformationBackend": {
+                        "libs": ["scnetworkreachabilitynetworkinformationbackend"],
+                        "type": "networkinformationbackends",
+                        "requires": ["Network"],
+                        "frameworks": ["SystemConfiguration"],
+                    }
+                })
+            elif self.settings.os == "Android":
+                plugins.update({
+                    "QAndroidNetworkInformationBackend": {
+                        "libs": ["androidnetworkinformationbackend"],
+                        "type": "networkinformationbackends",
+                        "requires": ["Network"],
+                    }
+                })
+
+        # TODO: tls plugins (in dev branch only, maybe for 6.2.0?)
 
         return {"modules": modules, "plugins": plugins}
 
@@ -1214,9 +1285,9 @@ class QtConan(ConanFile):
 
         qml_system_libs = []
         if self.settings.os == "Windows":
-            qml_system_libs = ["shell32"]
+            qml_system_libs.append("shell32")
         elif self.settings.os in ["Linux", "FreeBSD"] and not self.options.shared:
-            qml_system_libs = ["rt"]
+            qml_system_libs.append("rt")
         modules.update({
             "Qml": {"requires": ["Core", "Network"], "system_libs": qml_system_libs},
             "QmlModels": {"requires": ["Core", "Qml"]},
@@ -1245,9 +1316,7 @@ class QtConan(ConanFile):
             quick_requires = ["Core", "Gui", "Qml", "QmlModels", "Network"]
             if self.options.get_safe("opengl", "no") != "no":
                 quick_requires.append("OpenGL")
-            quick_system_libs = []
-            if self.settings.os == "Windows":
-                quick_system_libs = ["user32"]
+            quick_system_libs = ["user32"] if self.settings.os == "Windows" else []
             modules.update({
                 "Quick": {"requires": quick_requires, "system_libs": quick_system_libs},
                 "QuickShapes": {"requires": ["Core", "Gui", "Qml", "Quick"]},
@@ -1272,15 +1341,17 @@ class QtConan(ConanFile):
         return {"modules": modules, "plugins": plugins}
 
     @property
-    def _qtactiveqt_components(self): # WIP
+    def _qtactiveqt_components(self):
         modules = {}
-        if self.settings.os == "Windows":
-            if self.options.gui and self.options.widgets:
-                modules.update({
-                    "AxBase": {"requires": ["Gui", "Widgets"]},
-                    "AxServer": {"requires": ["AxBase"]},
-                    "AxContainer": {"requires": ["AxBase"]},
-                })
+        if self.settings.os == "Windows" and self.options.gui and self.options.widgets:
+            axbase_system_libs = ["advapi32", "gdi32", "ole32", "oleaut32", "user32"]
+            if self.settings.compiler == "gcc":
+                axbase_system_libs.append("uuid")
+            modules.update({
+                "AxBase": {"requires": ["Core", "Gui", "Widgets"], "system_libs": axbase_system_libs},
+                "AxServer": {"requires": ["AxBase", "Core", "Gui", "Widgets"], "system_libs": ["shell32"]},
+                "AxContainer": {"requires": ["AxBase", "Core", "Gui", "Widgets"]},
+            })
         return {"modules": modules, "plugins": {}}
 
     @property
@@ -1310,7 +1381,7 @@ class QtConan(ConanFile):
                             "requires": ["Core", "Designer", "Gui", "WebKitWidgets", "Widgets"],
                         }
                     })
-                if self.options.qtactiveqt and self.settings.os == "Windows":
+                if self.options.get_safe("qtactiveqt") and self.settings.os == "Windows":
                     plugins.update({
                         "QAxWidgetPlugin": {
                             "libs": ["qaxwidget"],
@@ -1438,24 +1509,27 @@ class QtConan(ConanFile):
     def _qtvirtualkeyboard_components(self): # WIP
         modules = {}
         plugins = {}
-        if self.options.gui and self.options.qtdeclarative:
-            modules.update({"VirtualKeyboard": {"requires": ["Gui", "Qml", "Quick"]}})
-            plugins.update({"QVirtualKeyboardPlugin": {"libs": ["qtvirtualkeyboardplugin"], "type": "platforminputcontexts", "requires": ["Gui", "Qml", "VirtualKeyboard"]}})
-            plugins.update({"QtVirtualKeyboardHangulPlugin": {"libs": ["qtvirtualkeyboard_hangul"], "type": "virtualkeyboard", "requires": ["Gui", "Qml", "VirtualKeyboard"]}})
+        if self.options.gui and self.options.qtsvg and self.options.qtdeclarative:
+            modules.update({"VirtualKeyboard": {"requires": ["Core", "Gui", "Qml", "Quick"]}})
+            plugins.update({"QVirtualKeyboardPlugin": {"libs": ["qtvirtualkeyboardplugin"], "type": "platforminputcontexts", "requires": ["Core", "Gui", "Qml", "VirtualKeyboard"]}})
+            plugins.update({"QtVirtualKeyboardHangulPlugin": {"libs": ["qtvirtualkeyboard_hangul"], "type": "virtualkeyboard", "requires": ["Core", "Gui", "Qml", "VirtualKeyboard"]}})
             plugins.update({"QtVirtualKeyboardMyScriptPlugin": {"libs": ["qtvirtualkeyboard_myscript"], "type": "virtualkeyboard", "requires": ["Gui", "Qml", "VirtualKeyboard"]}})
             plugins.update({"QtVirtualKeyboardThaiPlugin": {"libs": ["qtvirtualkeyboard_thai"], "type": "virtualkeyboard", "requires": ["Gui", "Qml", "VirtualKeyboard"]}})
         return {"modules": modules, "plugins": plugins}
 
     @property
-    def _qtscxml_components(self): # WIP
+    def _qtscxml_components(self):
         modules = {}
         plugins = {}
-        modules.update({"StateMachine": {}})
-        modules.update({"Scxml": {}})
         if self.options.qtdeclarative:
-            modules.update({"StateMachineQml": {"requires": ["StateMachine", "Qml"]}})
-            modules.update({"ScxmlQml": {"requires": ["Scxml", "Qml"]}})
-            plugins.update({"QScxmlEcmaScriptDataModelPlugin": {"libs": ["qscxmlecmascriptdatamodel"], "type": "scxmldatamodel", "requires": ["Scxml", "Qml"]}})
+            modules.update({"Scxml": {"requires": ["Core"]}})
+            statemachine_requires = ["Core"]
+            if self.options.gui:
+                statemachine_requires.append("Gui")
+            modules.update({"StateMachine": {"requires": statemachine_requires}})
+            modules.update({"StateMachineQml": {"requires": ["Core", "Qml", "StateMachine"]}})
+            modules.update({"ScxmlQml": {"requires": ["Core", "Qml", "Scxml"]}})
+            plugins.update({"QScxmlEcmaScriptDataModelPlugin": {"libs": ["qscxmlecmascriptdatamodel"], "type": "scxmldatamodel", "requires": ["Core", "Scxml", "Qml"]}})
         return {"modules": modules, "plugins": plugins}
 
     @property
