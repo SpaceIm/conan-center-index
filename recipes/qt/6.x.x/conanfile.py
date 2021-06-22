@@ -43,7 +43,7 @@ class qt(Generator):
 
 class QtConan(ConanFile):
     _submodules = ["qtsvg", "qtdeclarative", "qttools", "qttranslations", "qtdoc",
-                   "qtwayland","qtquickcontrols2", "qtquicktimeline", "qtquick3d", "qtshadertools", "qt5compat",
+                   "qtwayland", "qtquickcontrols2", "qtquicktimeline", "qtquick3d", "qtshadertools", "qt5compat",
                    "qtactiveqt", "qtcharts", "qtdatavis3d", "qtlottie", "qtscxml", "qtvirtualkeyboard",
                    "qt3d", "qtimageformats", "qtnetworkauth", "qtcoap", "qtmqtt", "qtopcua"]
 
@@ -204,7 +204,7 @@ class QtConan(ConanFile):
             self.requires("vulkan-loader/1.2.172")
 
         if self.options.with_glib:
-            self.requires("glib/2.68.1")
+            self.requires("glib/2.68.3")
         if self.options.with_doubleconversion and not self.options.multiconfiguration:
             self.requires("double-conversion/3.1.5")
         if self.options.get_safe("with_freetype", False) and not self.options.multiconfiguration:
@@ -214,7 +214,7 @@ class QtConan(ConanFile):
         if self.options.get_safe("with_icu", False):
             self.requires("icu/68.2")
         if self.options.get_safe("with_harfbuzz", False) and not self.options.multiconfiguration:
-            self.requires("harfbuzz/2.8.0")
+            self.requires("harfbuzz/2.8.1")
         if self.options.get_safe("with_libjpeg", False) and not self.options.multiconfiguration:
             if self.options.with_libjpeg == "libjpeg-turbo":
                 self.requires("libjpeg-turbo/2.1.0")
@@ -235,7 +235,7 @@ class QtConan(ConanFile):
         if self.options.gui and self.settings.os in ["Linux", "FreeBSD"]:
             self.requires("xorg/system")
             if not tools.cross_building(self, skip_x64_x86=True):
-                self.requires("xkbcommon/1.2.1")
+                self.requires("xkbcommon/1.3.0")
         if self.settings.os != "Windows" and self.options.get_safe("opengl", "no") != "no":
             self.requires("opengl/system")
         if self.options.with_zstd:
@@ -298,6 +298,12 @@ class QtConan(ConanFile):
             raise ConanInvalidConfiguration("qtquickcontrols2 requires gui, qtdeclarative, qtsvg and qtimageformats")
         if self.options.qtcharts and not (self.options.gui and self.options.widgets):
             raise ConanInvalidConfiguration("qtcharts requires gui and widgets")
+        if self.options.qtdatavis3d and not self.options.qtdeclarative:
+            raise ConanInvalidConfiguration("qtdatavis3d requires qtdeclarative")
+        if self.options.qtlottie and not self.options.qtdeclarative:
+            raise ConanInvalidConfiguration("qtlottie requires qtdeclarative")
+        if self.options.qtquick3d and not (self.options.qtdeclarative and self.options.qtshadertools):
+            raise ConanInvalidConfiguration("qtquick3d requires qtdeclarative and qtshadertools")
 
     def package_id(self):
         del self.info.options.cross_compile
@@ -747,92 +753,41 @@ class QtConan(ConanFile):
         if self.options.qtcharts:
             modules.update(self._qtcharts_components["modules"])
             plugins.update(self._qtcharts_components["plugins"])
+        if self.options.qtdatavis3d:
+            modules.update(self._qtdatavis3d_components["modules"])
+            plugins.update(self._qtdatavis3d_components["plugins"])
+        if self.options.qtvirtualkeyboard:
+            modules.update(self._qtvirtualkeyboard_components["modules"])
+            plugins.update(self._qtvirtualkeyboard_components["plugins"])
+        if self.options.qtscxml:
+            modules.update(self._qtscxml_components["modules"])
+            plugins.update(self._qtscxml_components["plugins"])
+        if self.options.qtnetworkauth:
+            modules.update(self._qtnetworkauth_components["modules"])
+            plugins.update(self._qtnetworkauth_components["plugins"])
+        if self.options.qtlottie:
+            modules.update(self._qtlottie_components["modules"])
+            plugins.update(self._qtlottie_components["plugins"])
+        if self.options.qtquick3d:
+            modules.update(self._qtquick3d_components["modules"])
+            plugins.update(self._qtquick3d_components["plugins"])
+        if self.options.qtshadertools:
+            modules.update(self._qtshadertools_components["modules"])
+            plugins.update(self._qtshadertools_components["plugins"])
+        if self.options.qt5compat:
+            modules.update(self._qt5compat_components["modules"])
+            plugins.update(self._qt5compat_components["plugins"])
+        if self.options.get_safe("qtcoap"):
+            modules.update(self._qtcoap_components["modules"])
+            plugins.update(self._qtcoap_components["plugins"])
+        if self.options.get_safe("qtmqtt"):
+            modules.update(self._qtmqtt_components["modules"])
+            plugins.update(self._qtmqtt_components["plugins"])
+        if self.options.get_safe("qtopcua"):
+            modules.update(self._qtopcua_components["modules"])
+            plugins.update(self._qtopcua_components["plugins"])
 
-        def _components():
-            modules = {}
-            plugins = {}
-
-            # TODO: qttranslations?
-
-            # TODO: qtdoc?
-
-            # qtdatavis3d (WIP)
-            if self.options.qtdatavis3d:
-                if self.options.gui and self.options.get_safe("opengl", "no") != "no" and self.options.qtdeclarative:
-                    modules.update({"DataVisualization": {"requires": ["Gui", "OpenGL", "Qml", "Quick"]}})
-
-            # qtvirtualkeyboard (WIP)
-            if self.options.qtvirtualkeyboard:
-                if self.options.gui and self.options.qtdeclarative:
-                    modules.update({"VirtualKeyboard": {"requires": ["Gui", "Qml", "Quick"]}})
-
-                _create_plugin("QVirtualKeyboardPlugin", "qtvirtualkeyboardplugin", "platforminputcontexts", ["Gui", "Qml", "VirtualKeyboard"])
-                _create_plugin("QtVirtualKeyboardHangulPlugin", "qtvirtualkeyboard_hangul", "virtualkeyboard", ["Gui", "Qml", "VirtualKeyboard"])
-                _create_plugin("QtVirtualKeyboardMyScriptPlugin", "qtvirtualkeyboard_myscript", "virtualkeyboard", ["Gui", "Qml", "VirtualKeyboard"])
-                _create_plugin("QtVirtualKeyboardThaiPlugin", "qtvirtualkeyboard_thai", "virtualkeyboard", ["Gui", "Qml", "VirtualKeyboard"])
-
-            # qtscxml (WIP)
-            if self.options.qtscxml:
-                modules.update({"StateMachine": {}})
-                modules.update({"Scxml": {}})
-                if self.options.qtdeclarative:
-                    modules.update({"StateMachineQml": {"requires": ["StateMachine", "Qml"]}})
-                    modules.update({"ScxmlQml": {"requires": ["Scxml", "Qml"]}})
-
-                _create_plugin("QScxmlEcmaScriptDataModelPlugin", "qscxmlecmascriptdatamodel", "scxmldatamodel", ["Scxml", "Qml"])
-
-            # qtnetworkauth (WIP)
-            if self.options.qtnetworkauth:
-                modules.update({"NetworkAuth": {"requires": ["Network"]}})
-
-            # qtlottie (WIP)
-            if self.options.qtlottie:
-                if self.options.gui:
-                    modules.update({"Bodymovin": {"requires": ["Gui"]}})
-
-            # TODO: qtquicktimeline?
-
-            # qtquick3d (WIP)
-            if self.options.qtquick3d:
-                if self.options.gui:
-                    modules.update({"Quick3DUtils": {"requires": ["Gui"]}})
-                    if self.options.qtdeclarative:
-                        modules.update({"Quick3DAssetImport": {"requires": ["Gui", "Qml", "Quick3DUtils"]}})
-                        if self.options.qtshadertools:
-                            modules.update({
-                                "Quick3DRuntimeRender": {"requires": ["Gui", "Quick", "Quick3DAssetImport", "Quick3DUtils", "ShaderTools"]},
-                                "Quick3D": {"requires": ["Gui", "Qml", "Quick", "Quick3DRuntimeRender"]},
-                            })
-
-            # qtshadertools (WIP)
-            if self.options.qtshadertools:
-                if self.options.gui:
-                    modules.update({"ShaderTools": {"requires": ["Gui"]}})
-
-            # qt5compat (WIP)
-            if self.options.qt5compat:
-                modules.update({"Core5Compat": {}})
-
-            # qtcoap (WIP)
-            if self.options.get_safe("qtcoap"):
-                modules.update({"Coap": {"requires": ["Network"]}})
-
-            # qtmqtt (WIP)
-            if self.options.get_safe("qtmqtt"):
-                modules.update({"Mqtt": {"requires": ["Network"]}})
-
-            # qtopcua (WIP)
-            if self.options.get_safe("qtopcua"):
-                modules.update({"OpcUa": {"requires": ["Network"]}})
-
-                _create_plugin("QOpen62541Plugin", "open62541_backend", "opcua", ["Network", "OpcUa"])
-                _create_plugin("QUACppPlugin", "uacpp_backend", "opcua", ["Network", "OpcUa"])
-
-            return {
-                "modules": modules,
-                "plugins": plugins,
-            }
-
+        # TODO: loop in modules and plugins to create components
 
         if tools.Version(self.version) < "6.1.0":
             self.cpp_info.components["qtCore"].libs.append("Qt6Core_qobject%s" % libsuffix)
@@ -851,7 +806,7 @@ class QtConan(ConanFile):
         if self.settings.os != "Windows":
             self.cpp_info.components["qtCore"].cxxflags.append("-fPIC")
 
-        self.cpp_info.components["qtCore"].builddirs.append(os.path.join("res","archdatadir","bin"))
+        self.cpp_info.components["qtCore"].builddirs.append(os.path.join("res", "archdatadir", "bin"))
         self.cpp_info.components["qtCore"].build_modules["cmake_find_package"].append(self._cmake_executables_file)
         self.cpp_info.components["qtCore"].build_modules["cmake_find_package_multi"].append(self._cmake_executables_file)
         self.cpp_info.components["qtCore"].build_modules["cmake_find_package"].append(self._cmake_qt6_private_file("Core"))
@@ -1426,7 +1381,6 @@ class QtConan(ConanFile):
 
     @property
     def _qtimageformats_components(self):
-        modules = {}
         plugins = {}
         if self.options.gui:
             plugins.update({
@@ -1447,24 +1401,22 @@ class QtConan(ConanFile):
                         "frameworks": ["CoreFoundation", "CoreGraphics", "ImageIO"],
                     }
                 })
-        return {"modules": modules, "plugins": plugins}
+        return {"modules": {}, "plugins": plugins}
 
     @property
     def _qtquickcontrols2_components(self):
         modules = {}
-        plugins = {}
         if self.options.gui and self.options.qtdeclarative:
             modules.update({
                 "QuickTemplates2": {"requires": ["Core", "Gui", "Qml", "Quick", "QmlModels"]},
                 "QuickControls2": {"requires": ["Core", "Gui", "Qml", "Quick", "QuickTemplates2"]},
                 "QuickControls2Impl": {"requires": ["Core", "Gui", "Qml", "Quick", "QuickTemplates2"]},
             })
-        return {"modules": modules, "plugins": plugins}
+        return {"modules": modules, "plugins": {}}
 
     @property
     def _qtcharts_components(self):
         modules = {}
-        plugins = {}
         if self.options.gui and self.options.widgets:
             charts_requires = ["Core", "Gui", "Widgets"]
             if self.options.get_safe("opengl", "no") != "no":
@@ -1473,4 +1425,102 @@ class QtConan(ConanFile):
             if self.settings.os == "Windows":
                 charts_system_libs.append("user32")
             modules.update({"Charts": {"requires": charts_requires, "system_libs": charts_system_libs}})
+        return {"modules": modules, "plugins": {}}
+
+    @property
+    def _qtdatavis3d_components(self):
+        modules = {}
+        if self.options.gui and self.options.widgets and self.options.get_safe("opengl", "no") != "no" and self.options.qtdeclarative:
+            modules.update({"DataVisualization": {"requires": ["Core", "Gui", "OpenGL", "Qml", "Quick"]}})
+        return {"modules": modules, "plugins": {}}
+
+    @property
+    def _qtvirtualkeyboard_components(self): # WIP
+        modules = {}
+        plugins = {}
+        if self.options.gui and self.options.qtdeclarative:
+            modules.update({"VirtualKeyboard": {"requires": ["Gui", "Qml", "Quick"]}})
+            plugins.update({"QVirtualKeyboardPlugin": {"libs": ["qtvirtualkeyboardplugin"], "type": "platforminputcontexts", "requires": ["Gui", "Qml", "VirtualKeyboard"]}})
+            plugins.update({"QtVirtualKeyboardHangulPlugin": {"libs": ["qtvirtualkeyboard_hangul"], "type": "virtualkeyboard", "requires": ["Gui", "Qml", "VirtualKeyboard"]}})
+            plugins.update({"QtVirtualKeyboardMyScriptPlugin": {"libs": ["qtvirtualkeyboard_myscript"], "type": "virtualkeyboard", "requires": ["Gui", "Qml", "VirtualKeyboard"]}})
+            plugins.update({"QtVirtualKeyboardThaiPlugin": {"libs": ["qtvirtualkeyboard_thai"], "type": "virtualkeyboard", "requires": ["Gui", "Qml", "VirtualKeyboard"]}})
+        return {"modules": modules, "plugins": plugins}
+
+    @property
+    def _qtscxml_components(self): # WIP
+        modules = {}
+        plugins = {}
+        modules.update({"StateMachine": {}})
+        modules.update({"Scxml": {}})
+        if self.options.qtdeclarative:
+            modules.update({"StateMachineQml": {"requires": ["StateMachine", "Qml"]}})
+            modules.update({"ScxmlQml": {"requires": ["Scxml", "Qml"]}})
+            plugins.update({"QScxmlEcmaScriptDataModelPlugin": {"libs": ["qscxmlecmascriptdatamodel"], "type": "scxmldatamodel", "requires": ["Scxml", "Qml"]}})
+        return {"modules": modules, "plugins": plugins}
+
+    @property
+    def _qtnetworkauth_components(self):
+        return {
+            "modules": {"NetworkAuth": {"requires": ["Core", "Network"]}},
+            "plugins": {},
+        }
+
+    @property
+    def _qtlottie_components(self):
+        modules = {}
+        if self.options.gui:
+            modules.update({"Bodymovin": {"requires": ["Core", "Gui"]}})
+        return {"modules": modules, "plugins": {}}
+
+    @property
+    def _qtquick3d_components(self): # WIP
+        modules = {}
+        plugins = {}
+        if self.options.gui:
+            modules.update({"Quick3DUtils": {"requires": ["Gui"]}})
+            if self.options.qtdeclarative:
+                modules.update({"Quick3DAssetImport": {"requires": ["Gui", "Qml", "Quick3DUtils"]}})
+                if self.options.qtshadertools:
+                    modules.update({
+                        "Quick3DRuntimeRender": {"requires": ["Gui", "Quick", "Quick3DAssetImport", "Quick3DUtils", "ShaderTools"]},
+                        "Quick3D": {"requires": ["Gui", "Qml", "Quick", "Quick3DRuntimeRender"]},
+                    })
+        return {"modules": modules, "plugins": plugins}
+
+    @property
+    def _qtshadertools_components(self): # WIP
+        modules = {}
+        plugins = {}
+        if self.options.gui:
+            modules.update({"ShaderTools": {"requires": ["Gui"]}})
+        return {"modules": modules, "plugins": plugins}
+
+    @property
+    def _qt5compat_components(self): # WIP
+        modules = {}
+        plugins = {}
+        modules.update({"Core5Compat": {}})
+        return {"modules": modules, "plugins": plugins}
+
+    @property
+    def _qtcoap_components(self): # WIP
+        modules = {}
+        plugins = {}
+        modules.update({"Coap": {"requires": ["Network"]}})
+        return {"modules": modules, "plugins": plugins}
+
+    @property
+    def _qtmqtt_components(self): # WIP
+        modules = {}
+        plugins = {}
+        modules.update({"Mqtt": {"requires": ["Network"]}})
+        return {"modules": modules, "plugins": plugins}
+
+    @property
+    def _qtopcua_components(self): # WIP
+        modules = {}
+        plugins = {}
+        modules.update({"OpcUa": {"requires": ["Network"]}})
+        plugins.update({"QOpen62541Plugin": {"libs": ["open62541_backend"], "type": "opcua", "requires": ["Network", "OpcUa"]}})
+        plugins.update({"QUACppPlugin": {"libs": ["uacpp_backend"], "type": "opcua", "requires": ["Network", "OpcUa"]}})
         return {"modules": modules, "plugins": plugins}
