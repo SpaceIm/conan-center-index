@@ -694,7 +694,7 @@ class QtConan(ConanFile):
                 reqs.append(r if "::" in r else "qt%s" % r)
             return reqs
 
-        def _create_module(module, requires, system_libs, frameworks, header_only=False):
+        def _create_module(module, requires, defines, system_libs, frameworks, header_only=False):
             componentname = "qt%s" % module
             assert componentname not in self.cpp_info.components, "Module %s already present in self.cpp_info.components" % module
             self.cpp_info.components[componentname].names["cmake_find_package"] = module
@@ -702,7 +702,7 @@ class QtConan(ConanFile):
             if not header_only:
                 self.cpp_info.components[componentname].libs = ["Qt6%s%s" % (module, libsuffix)]
             self.cpp_info.components[componentname].includedirs = ["include", os.path.join("include", "Qt%s" % module)]
-            self.cpp_info.components[componentname].defines = ["QT_%s_LIB" % module.upper()]
+            self.cpp_info.components[componentname].defines = ["QT_%s_LIB" % module.upper()] + defines
             self.cpp_info.components[componentname].requires = _get_corrected_reqs(requires)
             self.cpp_info.components[componentname].system_libs = system_libs
             self.cpp_info.components[componentname].frameworks = frameworks
@@ -786,10 +786,11 @@ class QtConan(ConanFile):
         # Create modules and plugins
         for module, properties in modules.items():
             requires = properties.get("requires", [])
+            defines = properties.get("defines", [])
             system_libs = properties.get("system_libs", [])
             frameworks = properties.get("frameworks", [])
             header_only = properties.get("header_only", False)
-            _create_module(module, requires, system_libs, frameworks, header_only=header_only)
+            _create_module(module, requires, defines, system_libs, frameworks, header_only=header_only)
         for pluginname, properties in plugins.items():
             libs = properties.get("libs", [])
             type = properties.get("type", "")
@@ -807,10 +808,6 @@ class QtConan(ConanFile):
             self.cpp_info.components["qtQmlImportScanner"].names["cmake_find_package"] = "QmlImportScanner" # this is an alias for Qml and there to integrate with existing consumers
             self.cpp_info.components["qtQmlImportScanner"].names["cmake_find_package_multi"] = "QmlImportScanner"
             self.cpp_info.components["qtQmlImportScanner"].requires = _get_corrected_reqs(["Qml"])
-
-        if self.options.get_safe("qtactiveqt") and self.settings.os == "Windows" and self.options.gui and self.options.widgets:
-            self.cpp_info.components["qtAxServer"].system_libs.append("shell32")
-            self.cpp_info.components["qtAxServer"].defines.append("QAXSERVER")
 
         if self.settings.os != "Windows":
             self.cpp_info.components["qtCore"].cxxflags.append("-fPIC")
@@ -1344,7 +1341,7 @@ class QtConan(ConanFile):
                 axbase_system_libs.append("uuid")
             modules.update({
                 "AxBase": {"requires": ["Core", "Gui", "Widgets"], "system_libs": axbase_system_libs},
-                "AxServer": {"requires": ["AxBase", "Core", "Gui", "Widgets"], "system_libs": ["shell32"]},
+                "AxServer": {"requires": ["AxBase", "Core", "Gui", "Widgets"], "defines": ["QAXSERVER"], "system_libs": ["shell32"]},
                 "AxContainer": {"requires": ["AxBase", "Core", "Gui", "Widgets"]},
             })
         return {"modules": modules, "plugins": {}}
