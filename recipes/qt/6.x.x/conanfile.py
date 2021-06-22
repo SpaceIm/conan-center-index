@@ -206,6 +206,7 @@ class QtConan(ConanFile):
         if self.options.with_glib:
             self.requires("glib/2.68.3")
         if self.options.with_doubleconversion and not self.options.multiconfiguration:
+            # FIXME: qt seems to use vendored double-conversion even if Finddouble-conversion.cmake is found
             self.requires("double-conversion/3.1.5")
         if self.options.get_safe("with_freetype", False) and not self.options.multiconfiguration:
             self.requires("freetype/2.10.4")
@@ -246,9 +247,13 @@ class QtConan(ConanFile):
             self.requires("brotli/1.0.9")
         if self.options.get_safe("qtimageformats"):
             self.requires("jasper/2.0.32")
-            self.requires("libtiff/4.2.0")
+            # FIXME: for some odd reason, CMake configuration fails because it improperly detects TIFF_FOUND = "False"
+            # self.requires("libtiff/4.2.0")
             self.requires("libwebp/1.2.0")
             # TODO: add libmng for QMngPlugin
+        if self.options.get_safe("qtopcua"):
+            # TODO: use external open62541
+            pass
 
     @property
     def _minimum_compilers_version(self):
@@ -487,7 +492,7 @@ class QtConan(ConanFile):
 
         if self.options.get_safe("qtimageformats"):
             self._cmake.definitions["FEATURE_tiff"] = "ON"
-            self._cmake.definitions["FEATURE_system_tiff"] = "ON"
+            self._cmake.definitions["FEATURE_system_tiff"] = "OFF" # TODO: enable when fixed
             self._cmake.definitions["FEATURE_webp"] = "ON"
             self._cmake.definitions["FEATURE_system_webp"] = "ON"
             self._cmake.definitions["FEATURE_jasper"] = "ON"
@@ -835,7 +840,7 @@ class QtConan(ConanFile):
                     self.cpp_info.components[component].sharedlinkflags.extend(obj_files)
 
     @property
-    def _qtbase_components(self): # WIP
+    def _qtbase_components(self):
         def pcre2():
             return ["pcre2::pcre2"] if self.options.with_pcre2 else []
 
@@ -894,8 +899,8 @@ class QtConan(ConanFile):
         plugins = {}
 
         # TODO: Entrypoint library for Windows and iOS
+        # TODO: add missing modules: DeviceDiscoverySupport, FbSupport
 
-        # Core
         core_system_libs = []
         core_frameworks = []
         if self.settings.os == "Windows":
@@ -912,18 +917,7 @@ class QtConan(ConanFile):
                 core_frameworks.append("UIKit")
             elif self.settings.os == "watchOS":
                 core_frameworks.append("WatchKit")
-        modules.update({
-            "Core": {
-                "requires": ["zlib::zlib"] + pcre2() + doubleconversion() + glib() + icu() + zstd(),
-                "system_libs": core_system_libs,
-                "frameworks": core_frameworks,
-            }
-        })
-        # Concurrent
-        modules.update({"Concurrent": {"requires": ["Core"]}})
-        # Sql
-        modules.update({"Sql": {"requires": ["Core"]}})
-        # Network
+
         network_system_libs = []
         network_frameworks = []
         if self.settings.os == "Windows":
@@ -937,37 +931,34 @@ class QtConan(ConanFile):
                 network_frameworks.extend(["CoreServices", "GSS"])
             if self.settings.os in ["Macos", "iOS"]:
                 network_frameworks.append("SystemConfiguration")
-        modules.update({
-            "Network": {
-                "requires": ["Core", "zlib::zlib"] + openssl() + brotli() + zstd(),
-                "system_libs": network_system_libs,
-                "frameworks": network_frameworks,
-            }
-        })
-        # Xml
-        modules.update({"Xml": {"requires": ["Core"]}})
-        # DBus
+
         dbus_system_libs = []
         if self.settings.os == "Windows":
             dbus_system_libs.extend(["advapi32", "netapi32", "user32", "ws2_32"])
-        modules.update({"DBus": {"requires": ["Core"], "system_libs": dbus_system_libs}})
-        # Test
+
         test_frameworks = []
         if tools.is_apple_os(self.settings.os):
             test_frameworks.append("Security")
             if self.settings.os == "Macos":
                 test_frameworks.extend(["AppKit", "ApplicationServices", "Foundation", "IOKit"])
-        modules.update({"Test": {"requires": ["Core"], "frameworks": test_frameworks}})
+
+        modules.update({
+            "Core": {"requires": ["zlib::zlib"] + pcre2() + doubleconversion() + glib() + icu() + zstd(), "system_libs": core_system_libs, "frameworks": core_frameworks},
+            "Concurrent": {"requires": ["Core"]},
+            "Sql": {"requires": ["Core"]},
+            "Network": {"requires": ["Core", "zlib::zlib"] + openssl() + brotli() + zstd(), "system_libs": network_system_libs, "frameworks": network_frameworks},
+            "Xml": {"requires": ["Core"]},
+            "DBus": {"requires": ["Core"], "system_libs": dbus_system_libs},
+            "Test": {"requires": ["Core"], "frameworks": test_frameworks},
+        })
 
         if self.options.gui:
             # Gui
             gui_system_libs = []
             gui_frameworks = []
             if self.settings.os == "Windows":
-                gui_system_libs.extend(["advapi32", "gdi32", "ole32", "shell32",
-                                        "user32", "d3d11", "dxgi", "dxguid"])
-                # TODO: what is the condition?
-                # gui_system_libs.extend(["d2d1", "dwrite", "uuid"])
+                gui_system_libs.extend(["advapi32", "gdi32", "ole32", "shell32", "user32",
+                                        "d3d11", "dxgi", "dxguid", "d2d1", "dwrite"])
                 if self.settings.compiler == "gcc":
                     gui_system_libs.append("uuid")
             elif self.settings.os in ["Linux", "FreeBSD"]:
@@ -1027,17 +1018,17 @@ class QtConan(ConanFile):
                         "requires": ["Core", "Gui"],
                     }
                 })
-                # TODO: more plugins for xcb
+                # TODO: QXcbEglIntegrationPlugin and QXcbGlxIntegrationPlugin?
             elif self.settings.os in ["iOS", "tvOS"]:
-                iosintegrationplugin_frameworks = ["AudioToolbox", "Foundation", "Metal", "QuartzCore", "UIKit"]
+                ios_int_plugin_frameworks = ["AudioToolbox", "Foundation", "Metal", "QuartzCore", "UIKit"]
                 if self.settings.os != "tvOS":
-                    iosintegrationplugin_frameworks.append("AssetsLibrary")
+                    ios_int_plugin_frameworks.append("AssetsLibrary")
                 plugins.update({
                     "QIOSIntegrationPlugin": {
                         "libs": ["qios"],
                         "type": "platforms",
                         "requires": ["Core", "Gui"] + opengl(),
-                        "frameworks": iosintegrationplugin_frameworks,
+                        "frameworks": ios_int_plugin_frameworks,
                     }
                 })
             elif self.settings.os == "Macos":
@@ -1188,8 +1179,6 @@ class QtConan(ConanFile):
                 if self.options.get_safe("opengl", "no") != "no":
                     modules.update({"OpenGLWidgets": {"requires": ["OpenGL", "Widgets"]}})
 
-        # TODO: add missing modules: DeviceDiscoverySupport, FbSupport
-
         # sql plugins
         if self.options.with_sqlite3:
             plugins.update({
@@ -1292,13 +1281,8 @@ class QtConan(ConanFile):
             "Qml": {"requires": ["Core", "Network"], "system_libs": qml_system_libs},
             "QmlModels": {"requires": ["Core", "Qml"]},
             "QmlWorkerScript": {"requires": ["Core", "Qml"]},
-            "QmlLocalStorage": {"requires": ["Core", "Qml", "Sql"]},
-            "LabsSettings": {"requires": ["Core", "Qml"]},
-            "LabsQmlModels": {"requires": ["Core", "Qml"]},
-            "LabsFolderListModel": {"requires": ["Qml", "QmlModels"]},
             "PacketProtocol": {"requires": ["Core"]},
             "QmlDevTools": {"requires": ["Core"]},
-            "QmlDom": {"requires": ["Core", "QmlDevTools"]},
             "QmlCompiler": {"requires": ["Core", "QmlDevTools"]},
             "QmlDebug": {"requires": ["Core", "Network", "PacketProtocol", "Qml"]},
         })
@@ -1312,6 +1296,14 @@ class QtConan(ConanFile):
             "QTcpServerConnectionFactory": {"libs": ["qmldbg_tcp"], "type": "qmltooling", "requires": ["Network", "Qml"]},
             "QLocalClientConnectionFactory": {"libs": ["qmldbg_local"], "type": "qmltooling", "requires": ["Qml"]},
         })
+        if tools.Version(self.version) >= "6.1.0":
+            modules.update({
+                "QmlLocalStorage": {"requires": ["Core", "Qml", "Sql"]},
+                "LabsSettings": {"requires": ["Core", "Qml"]},
+                "LabsQmlModels": {"requires": ["Core", "Qml"]},
+                "LabsFolderListModel": {"requires": ["Qml", "QmlModels"]},
+                "QmlDom": {"requires": ["Core", "QmlDevTools"]},
+            })
         if self.options.gui:
             quick_requires = ["Core", "Gui", "Qml", "QmlModels", "Network"]
             if self.options.get_safe("opengl", "no") != "no":
@@ -1320,18 +1312,21 @@ class QtConan(ConanFile):
             modules.update({
                 "Quick": {"requires": quick_requires, "system_libs": quick_system_libs},
                 "QuickShapes": {"requires": ["Core", "Gui", "Qml", "Quick"]},
-                "QuickLayouts": {"requires": ["Core", "Gui", "Qml", "Quick"]},
                 "QuickTest": {"requires": ["Core", "Gui", "Qml", "Quick", "Test"]},
                 "QuickParticles": {"requires": ["Core", "Gui", "Qml", "Quick"]},
-                "LabsAnimation": {"requires": ["Qml", "Quick"]},
-                "LabsWavefrontMesh": {"requires": ["Core", "Gui", "Quick"]},
-                "LabsSharedImage": {"requires": ["Core", "Gui", "Quick"]},
             })
             plugins.update({
                 "QQmlInspectorServiceFactory": {"libs": ["qmldbg_inspector"], "type": "qmltooling", "requires": ["Core", "Gui", "PacketProtocol", "Qml", "Quick"]},
                 "QQuickProfilerAdapterFactory": {"libs": ["qmldbg_quickprofiler"], "type": "qmltooling", "requires": ["Core", "Gui", "PacketProtocol", "Qml", "Quick"]},
                 "QQmlPreviewServiceFactory": {"libs": ["qmldbg_preview"], "type": "qmltooling", "requires": ["Core", "Gui", "Network", "PacketProtocol", "Qml", "Quick"]},
             })
+            if tools.Version(self.version) >= "6.1.0":
+                modules.update({
+                    "QuickLayouts": {"requires": ["Core", "Gui", "Qml", "Quick"]},
+                    "LabsAnimation": {"requires": ["Qml", "Quick"]},
+                    "LabsWavefrontMesh": {"requires": ["Core", "Gui", "Quick"]},
+                    "LabsSharedImage": {"requires": ["Core", "Gui", "Quick"]},
+                })
             if self.options.widgets:
                 quickwidgets_requires = ["Core", "Gui", "Qml", "Quick", "Widgets"]
                 if self.options.get_safe("opengl", "no") != "no":
@@ -1397,7 +1392,7 @@ class QtConan(ConanFile):
                             "requires": ["Core", "Designer", "Gui", "QuickWidgets", "Widgets"],
                         }
                     })
-                if False: # TODO: add a condition
+                if False: # TODO: not built for the moment?
                     plugins.update({
                         "QView3DPlugin": {
                             "libs": ["view3d"],
@@ -1408,46 +1403,55 @@ class QtConan(ConanFile):
         return {"modules": modules, "plugins": plugins}
 
     @property
-    def _qtwayland_components(self): # WIP
+    def _qtwayland_components(self):
         modules = {}
         plugins = {}
         if self.options.gui:
+            wayland_compositor_requires = ["Core", "Gui", "wayland::wayland-server"]
+            if self.options.get_safe("opengl", "no") != "no":
+                wayland_compositor_requires.append("OpenGL")
+            if self.options.qtdeclarative:
+                wayland_compositor_requires.extend(["Qml", "Quick"])
             modules.update({
-                "WaylandClient": {"requires": ["Gui", "wayland::wayland-client"]},
-                "WaylandCompositor": {"requires": ["Gui", "wayland::wayland-client"]},
+                "WaylandClient": {"requires": ["Core", "Gui", "wayland::wayland-client", "wayland::wayland-cursor"]},
+                "WaylandCompositor": {"requires": wayland_compositor_requires},
             })
+            plugins.update({"QWaylandIntegrationPlugin": {"libs": ["qwayland-generic"], "type": "platforms", "requires": ["Core", "Gui", "WaylandClient"]}})
+            # TODO: add tones of plugins
         return {"modules": modules, "plugins": plugins}
 
     @property
-    def _qt3d_components(self): # WIP
+    def _qt3d_components(self):
         modules = {}
         plugins = {}
-        if self.options.gui:
+        if self.options.gui and self.options.get_safe("opengl", "no") != "no":
             modules.update({
-                "3DCore": {"requires": ["Gui", "Network"]},
-                "3DInput": {"requires": ["3DCore", "Gui"]},
-                "3DLogic": {"requires": ["3DCore", "Gui"]},
+                "3DCore": {"requires": ["Core", "Gui", "Network", "Concurrent"]},
+                "3DLogic": {"requires": ["Core", "3DCore", "Gui"]},
+                "3DInput": {"requires": ["Core", "3DCore", "Gui"]}, # TODO: depends on Gamepad if built, but not yet available
+                "3DRender": {"requires": ["Core", "3DCore", "Concurrent", "OpenGL"]},
+                "3DExtras": {"requires": ["Core", "Gui", "3DCore", "3DInput", "3DLogic", "3DRender"]},
+                "3DAnimation": {"requires": ["Core", "3DCore", "3DRender", "Gui"]},
             })
-            if self.options.get_safe("opengl", "no") != "no":
-                modules.update({
-                    "3DRender": {"requires": ["3DCore", "OpenGL"]},
-                    "3DAnimation": {"requires": ["3DCore", "3DRender", "Gui"]},
-                    "3DExtras": {"requires": ["Gui", "3DCore", "3DInput", "3DLogic", "3DRender"]},
-                })
+            plugins.update({
+                "DefaultGeometryLoaderPlugin": {"libs": ["defaultgeometryloader"], "type": "geometryloaders", "requires": ["Core", "3DCore", "3DRender", "Gui"]},
+                # TODO: This plugin is not created if fbxsdk not installed on the system
+                # "fbxGeometryLoaderPlugin": {"libs": ["fbxgeometryloader"], "type": "geometryloaders", "requires": ["Core", "3DCore", "3DRender", "Gui"]},
+                "OpenGLRendererPlugin": {"libs": ["openglrenderer"], "type": "renderers", "requires": ["Core", "3DCore", "3DRender", "Gui", "OpenGL"]},
+            })
             if self.options.qtdeclarative:
                 modules.update({
-                    "3DQuick": {"requires": ["3DCore", "Gui", "Qml", "Quick"]},
-                    "3DQuickInput": {"requires": ["3DCore", "3DInput", "3DQuick", "Gui", "Qml"]},
+                    "3DQuick": {"requires": ["Core", "3DCore", "Gui", "Qml", "Quick"]},
+                    "3DQuickRender": {"requires": ["Core", "3DCore", "3DQuick", "3DRender", "Gui", "Qml"]},
+                    "3DQuickScene2D": {"requires": ["Core", "3DCore", "3DQuick", "3DRender", "Gui", "Qml"]},
+                    "3DQuickExtras": {"requires": ["Core", "3DCore", "3DExtras", "3DInput", "3DLogic", "3DQuick", "3DRender", "Gui", "Qml"]},
+                    "3DQuickInput": {"requires": ["Core", "3DCore", "3DInput", "3DQuick", "Gui", "Qml"]},
+                    "3DQuickAnimation": {"requires": ["Core", "3DAnimation", "3DCore", "3DQuick", "3DRender", "Gui", "Qml"]},
                 })
-            if self.options.get_safe("opengl", "no") != "no" and self.options.qtdeclarative:
-                modules.update({
-                    "3DQuickAnimation": {"requires": ["3DAnimation", "3DCore", "3DQuick", "3DRender", "Gui", "Qml"]},
-                    "3DQuickExtras": {"requires": ["3DCore", "3DExtras", "3DInput", "3DQuick", "3DRender", "Gui", "Qml"]},
-                    "3DQuickRender": {"requires": ["3DCore", "3DQuick", "3DRender", "Gui", "Qml"]},
-                    "3DQuickScene2D": {"requires": ["3DCore", "3DQuick", "3DRender", "Gui", "Qml"]},
+            if self.options.qtshadertools:
+                plugins.update({
+                    "RhiRendererPlugin": {"libs": ["rhirenderer"], "type": "renderers", "requires": ["Core", "3DCore", "3DRender", "Gui", "ShaderTools"]},
                 })
-        plugins.update({"DefaultGeometryLoaderPlugin": {"libs": ["defaultgeometryloader"], "type": "geometryloaders", "requires": ["3DCore", "3DRender", "Gui"]}})
-        plugins.update({"fbxGeometryLoaderPlugin": {"libs": ["fbxgeometryloader"], "type": "geometryloaders", "requires": ["3DCore", "3DRender", "Gui"]}})
         return {"modules": modules, "plugins": plugins}
 
     @property
@@ -1457,7 +1461,7 @@ class QtConan(ConanFile):
             plugins.update({
                 "QTgaPlugin": {"libs": ["qtga"], "type": "imageformats", "requires": ["Core", "Gui"]},
                 "QWbmpPlugin": {"libs": ["qwbmp"], "type": "imageformats", "requires": ["Core", "Gui"]},
-                "QTiffPlugin": {"libs": ["qtiff"], "type": "imageformats", "requires": ["Core", "Gui", "libtiff::libtiff"]},
+                "QTiffPlugin": {"libs": ["qtiff"], "type": "imageformats", "requires": ["Core", "Gui"]},
                 "QWebpPlugin": {"libs": ["qwebp"], "type": "imageformats", "requires": ["Core", "Gui", "libwebp::libwebp"]},
                 "QICNSPlugin": {"libs": ["qicns"], "type": "imageformats", "requires": ["Core", "Gui"]},
                 # TODO: eventually add an option for Apple OS: if jasper is not used, QMacJp2Plugin is created instead
@@ -1506,15 +1510,19 @@ class QtConan(ConanFile):
         return {"modules": modules, "plugins": {}}
 
     @property
-    def _qtvirtualkeyboard_components(self): # WIP
+    def _qtvirtualkeyboard_components(self):
         modules = {}
         plugins = {}
         if self.options.gui and self.options.qtsvg and self.options.qtdeclarative:
             modules.update({"VirtualKeyboard": {"requires": ["Core", "Gui", "Qml", "Quick"]}})
-            plugins.update({"QVirtualKeyboardPlugin": {"libs": ["qtvirtualkeyboardplugin"], "type": "platforminputcontexts", "requires": ["Core", "Gui", "Qml", "VirtualKeyboard"]}})
-            plugins.update({"QtVirtualKeyboardHangulPlugin": {"libs": ["qtvirtualkeyboard_hangul"], "type": "virtualkeyboard", "requires": ["Core", "Gui", "Qml", "VirtualKeyboard"]}})
-            plugins.update({"QtVirtualKeyboardMyScriptPlugin": {"libs": ["qtvirtualkeyboard_myscript"], "type": "virtualkeyboard", "requires": ["Gui", "Qml", "VirtualKeyboard"]}})
-            plugins.update({"QtVirtualKeyboardThaiPlugin": {"libs": ["qtvirtualkeyboard_thai"], "type": "virtualkeyboard", "requires": ["Gui", "Qml", "VirtualKeyboard"]}})
+            vkey_plugin_system_libs = ["imm32"] if self.settings.os == "Windows" else []
+            plugins.update({
+                "QVirtualKeyboardPlugin": {"libs": ["qtvirtualkeyboardplugin"], "type": "platforminputcontexts", "requires": ["Core", "Gui", "Qml", "VirtualKeyboard"], "system_libs": vkey_plugin_system_libs},
+                "QtVirtualKeyboardHangulPlugin": {"libs": ["qtvirtualkeyboard_hangul"], "type": "virtualkeyboard", "requires": ["Core", "Gui", "Qml", "VirtualKeyboard"]},
+                "QtVirtualKeyboardMyScriptPlugin": {"libs": ["qtvirtualkeyboard_myscript"], "type": "virtualkeyboard", "requires": ["Core", "Gui", "Qml", "VirtualKeyboard"]},
+                "QtVirtualKeyboardThaiPlugin": {"libs": ["qtvirtualkeyboard_thai"], "type": "virtualkeyboard", "requires": ["Core", "Gui", "Qml", "VirtualKeyboard"]},
+            })
+            # TODO: add more plugins?
         return {"modules": modules, "plugins": plugins}
 
     @property
@@ -1547,54 +1555,52 @@ class QtConan(ConanFile):
         return {"modules": modules, "plugins": {}}
 
     @property
-    def _qtquick3d_components(self): # WIP
+    def _qtquick3d_components(self):
         modules = {}
-        plugins = {}
-        if self.options.gui:
-            modules.update({"Quick3DUtils": {"requires": ["Gui"]}})
-            if self.options.qtdeclarative:
-                modules.update({"Quick3DAssetImport": {"requires": ["Gui", "Qml", "Quick3DUtils"]}})
-                if self.options.qtshadertools:
-                    modules.update({
-                        "Quick3DRuntimeRender": {"requires": ["Gui", "Quick", "Quick3DAssetImport", "Quick3DUtils", "ShaderTools"]},
-                        "Quick3D": {"requires": ["Gui", "Qml", "Quick", "Quick3DRuntimeRender"]},
-                    })
-        return {"modules": modules, "plugins": plugins}
+        if self.options.gui and self.options.qtdeclarative and self.options.qtshadertools and self.settings.os != "watchOS":
+            modules.update({
+                "Quick3DUtils": {"requires": ["Core", "Gui"]},
+                "Quick3DAssetImport": {"requires": ["Core", "Gui", "Qml", "Quick3DUtils"]},
+                "Quick3DRuntimeRender": {"requires": ["Core", "Gui", "Quick", "Quick3DAssetImport", "Quick3DUtils", "ShaderTools"]},
+                "Quick3D": {"requires": ["Core", "Gui", "Qml", "Quick", "Quick3DRuntimeRender"]},
+                "Quick3DIblBaker": {"requires": ["Core", "Gui", "Quick", "Quick3DRuntimeRender"]},
+            })
+        return {"modules": modules, "plugins": {}}
 
     @property
-    def _qtshadertools_components(self): # WIP
+    def _qtshadertools_components(self):
         modules = {}
-        plugins = {}
-        if self.options.gui:
-            modules.update({"ShaderTools": {"requires": ["Gui"]}})
-        return {"modules": modules, "plugins": plugins}
+        if self.options.gui and not self.settings.os == "watchOS":
+            modules.update({"ShaderTools": {"requires": ["Core", "Gui"]}})
+        return {"modules": modules, "plugins": {}}
 
     @property
-    def _qt5compat_components(self): # WIP
-        modules = {}
-        plugins = {}
-        modules.update({"Core5Compat": {}})
-        return {"modules": modules, "plugins": plugins}
+    def _qt5compat_components(self):
+        return {
+            "modules": {"Core5Compat": {"requires": ["Core"]}},
+            "plugins": {},
+        }
 
     @property
-    def _qtcoap_components(self): # WIP
-        modules = {}
-        plugins = {}
-        modules.update({"Coap": {"requires": ["Network"]}})
-        return {"modules": modules, "plugins": plugins}
+    def _qtcoap_components(self):
+        return {
+            "modules": {"Coap": {"requires": ["Core", "Network"]}},
+            "plugins": {},
+        }
 
     @property
-    def _qtmqtt_components(self): # WIP
-        modules = {}
-        plugins = {}
-        modules.update({"Mqtt": {"requires": ["Network"]}})
-        return {"modules": modules, "plugins": plugins}
+    def _qtmqtt_components(self):
+        return {
+            "modules": {"Mqtt": {"requires": ["Core", "Network"]}},
+            "plugins": {},
+        }
 
     @property
-    def _qtopcua_components(self): # WIP
-        modules = {}
-        plugins = {}
-        modules.update({"OpcUa": {"requires": ["Network"]}})
-        plugins.update({"QOpen62541Plugin": {"libs": ["open62541_backend"], "type": "opcua", "requires": ["Network", "OpcUa"]}})
-        plugins.update({"QUACppPlugin": {"libs": ["uacpp_backend"], "type": "opcua", "requires": ["Network", "OpcUa"]}})
+    def _qtopcua_components(self):
+        modules = {"OpcUa": {"requires": ["Core", "Network"]}}
+        plugins = {
+            "QOpen62541Plugin": {"libs": ["open62541_backend"], "type": "opcua", "requires": ["Core", "Network", "OpcUa"]},
+            # TODO: this one might not be built
+            # "QUACppPlugin": {"libs": ["uacpp_backend"], "type": "opcua", "requires": ["Core", "Network", "OpcUa"]},
+        }
         return {"modules": modules, "plugins": plugins}
