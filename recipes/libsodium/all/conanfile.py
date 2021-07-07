@@ -58,12 +58,11 @@ class LibsodiumConan(ConanFile):
 
     @property
     def _vs_sln_folder(self):
-        folder = {"14": "vs2015",
-                  "15": "vs2017",
-                  "16": "vs2019"}.get(str(self.settings.compiler.version), None)
-        if not folder:
-            raise ConanInvalidConfiguration("Unsupported msvc version: {}".format(self.settings.compiler.version))
-        return folder
+        return {
+            "14": "vs2015",
+            "15": "vs2017",
+            "16": "vs2019"
+        }.get(str(self.settings.compiler.version), False)
 
     def configure(self):
         if self.options.shared:
@@ -74,6 +73,13 @@ class LibsodiumConan(ConanFile):
     def config_options(self):
         if self.settings.os == "Windows":
             del self.options.fPIC
+
+    def validate(self):
+        if self.settings.compiler == "Visual Studio":
+            if self.options.shared and "MT" in str(self.settings.compiler.runtime):
+                raise ConanInvalidConfiguration("Cannot build shared libsodium libraries with MT(d) runtime")
+            if not self._vs_sln_folder:
+                raise ConanInvalidConfiguration("Unsupported Visual Studio version: {}".format(self.settings.compiler.version))
 
     def build_requirements(self):
         if tools.os_info.is_windows and self.settings.compiler != "Visual Studio" and \
@@ -142,11 +148,6 @@ class LibsodiumConan(ConanFile):
                 self.run("{} -fiv".format(tools.get_env("AUTORECONF")), win_bash=tools.os_info.is_windows)
         autotools = self._configure_autotools()
         autotools.make()
-
-    def validate(self):
-        if self.settings.compiler == "Visual Studio":
-            if self.options.shared and "MT" in str(self.settings.compiler.runtime):
-                raise ConanInvalidConfiguration("Cannot build shared libsodium libraries with MT(d) runtime")
 
     def build(self):
         for patch in self.conan_data.get("patches", {}).get(self.version, []):
