@@ -2,6 +2,8 @@ import os
 from conans import ConanFile, tools
 from conans.errors import ConanInvalidConfiguration
 
+required_conan_version = ">=1.33.0"
+
 
 class BotanConan(ConanFile):
     name = 'botan'
@@ -120,9 +122,6 @@ class BotanConan(ConanFile):
         return ['coroutine', 'system']
 
     def validate(self):
-        if hasattr(self, 'settings_build') and tools.cross_building(self, skip_x64_x86=True):
-            raise ConanInvalidConfiguration("Cross-building not implemented")
-
         if self.options.with_boost:
             miss_boost_required_comp = any(getattr(self.options['boost'], 'without_{}'.format(boost_comp), True) for boost_comp in self._required_boost_components)
             if self.options['boost'].header_only or self.options['boost'].shared or self.options['boost'].magic_autolink or miss_boost_required_comp:
@@ -234,6 +233,11 @@ class BotanConan(ConanFile):
                 botan_abi_flags.append('-m32')
             elif self.settings.arch == 'x86_64':
                 botan_abi_flags.append('-m64')
+            # TODO: add more mapping of settings to abi_flags
+            elif self.settings.arch in ['armv7']:
+                botan_abi_flags.append('-arch armv7')
+            elif self.settings.arch in ['armv8']:
+                botan_abi_flags.append('-arch arm64')
 
         if self.options.get_safe('fPIC', True):
             botan_extra_cxx_flags.append('-fPIC')
