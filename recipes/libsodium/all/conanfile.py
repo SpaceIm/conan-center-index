@@ -12,8 +12,7 @@ class LibsodiumConan(ConanFile):
     exports_sources = ["patches/**"]
     settings    = "os", "compiler", "arch", "build_type"
     topics = ("sodium", "libsodium", "encryption", "signature", "hashing")
-    generators  = "cmake"
-    _source_subfolder = "source_subfolder"
+
     short_paths = True
 
     options = {
@@ -29,6 +28,10 @@ class LibsodiumConan(ConanFile):
         "use_soname": True,
         "PIE": False,
     }
+
+    @property
+    def _source_subfolder(self):
+        return "source_subfolder"
 
     @property
     def _android_id_str(self):
@@ -150,7 +153,7 @@ class LibsodiumConan(ConanFile):
             self._build_autotools_neutrino(configure_args)
         else:
             raise ConanInvalidConfiguration("Unsupported os for libsodium: {}".format(self.settings.os))
-            
+
     def validate(self):
         if self.settings.compiler == "Visual Studio":
             if self.options.shared and "MT" in str(self.settings.compiler.runtime):
