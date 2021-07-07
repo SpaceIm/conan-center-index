@@ -75,6 +75,8 @@ class LibsodiumConan(ConanFile):
         if tools.os_info.is_windows and self.settings.compiler != "Visual Studio" and \
            not tools.get_env("CONAN_BASH_PATH"):
             self.build_requires("msys2/cci.latest")
+        if self._is_mingw:
+            self.build_requires("libtool/2.4.6")
 
     def source(self):
         tools.get(**self.conan_data["sources"][self.version])
@@ -88,13 +90,7 @@ class LibsodiumConan(ConanFile):
         msbuild.build(sln_path, upgrade_project=False, platforms={"x86": "Win32"}, build_type=self._vs_configuration)
 
     def _build_autotools_impl(self, configure_args, host_arch=None):
-        win_bash = False
-        if self._is_mingw:
-            win_bash = True
-
-        autotools = AutoToolsBuildEnvironment(self, win_bash=win_bash)
-        if self._is_mingw:
-            self.run("autoreconf -i", cwd=self._source_subfolder, win_bash=win_bash)
+        autotools = AutoToolsBuildEnvironment(self, win_bash=tools.os_info.is_windows)
         host = None
         if host_arch:
             host = False
@@ -114,6 +110,8 @@ class LibsodiumConan(ConanFile):
         self._build_autotools_impl(configure_args, host_arch)
 
     def _build_autotools_mingw(self, configure_args):
+        with tools.chdir(self._source_subfolder):
+            self.run("{} -fiv".format(tools.get_env("AUTORECONF")), win_bash=tools.os_info.is_windows)
         arch = "i686" if self.settings.arch == "x86" else self.settings.arch
         host_arch = "%s-w64-mingw32" % arch
         self._build_autotools_impl(configure_args, host_arch)
