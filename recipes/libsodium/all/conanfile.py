@@ -190,6 +190,7 @@ class LibsodiumConan(ConanFile):
             self._package_autotools()
 
     def package_info(self):
+        self.cpp_info.names["pkg_config"] = "libsodium"
         if self.settings.compiler == "Visual Studio":
             if not self.options.shared:
                 self.cpp_info.defines = ["SODIUM_STATIC=1"]
