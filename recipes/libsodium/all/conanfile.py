@@ -149,7 +149,7 @@ class LibsodiumConan(ConanFile):
                 raise ConanInvalidConfiguration("Cannot build shared libsodium libraries with MT(d) runtime")
 
     def build(self):
-        for patch in self.conan_data["patches"][self.version]:
+        for patch in self.conan_data.get("patches", {}).get(self.version, []):
             tools.patch(**patch)
         if self.settings.os == "Macos":
             tools.replace_in_file(os.path.join(self._source_subfolder, "configure"), r"-install_name \$rpath/", "-install_name ")
