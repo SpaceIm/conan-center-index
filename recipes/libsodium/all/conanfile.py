@@ -18,10 +18,10 @@ class LibsodiumConan(ConanFile):
     short_paths = True
 
     options = {
-        "shared" : [True, False],
+        "shared": [True, False],
         "fPIC": [True, False],
-        "use_soname" : [True, False],
-        "PIE"    : [True, False],
+        "use_soname": [True, False],
+        "PIE": [True, False],
     }
 
     default_options = {
