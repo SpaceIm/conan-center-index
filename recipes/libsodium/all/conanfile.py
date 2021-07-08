@@ -115,10 +115,10 @@ class LibsodiumConan(ConanFile):
         if self.options.get_safe("fPIC"):
             args.append("--with-pic")
 
+        host_arch = None
+        host = None
         if self.settings.os == "Android":
             host_arch = "{}-linux-{}".format(tools.to_android_abi(self.settings.arch), self._android_id_str)
-        elif tools.is_apple_os(self.settings.os):
-            host_arch = "{}-apple-{}".format(self.settings.arch, "ios" if self.settings.os == "iOS" else "darwin")
         elif self._is_mingw:
             host_arch = "{}-w64-mingw32".format("i686" if self.settings.arch == "x86" else self.settings.arch)
         elif self.settings.os == "Neutrino":
@@ -132,8 +132,6 @@ class LibsodiumConan(ConanFile):
                 host_arch = "{}-nto-qnx7.0.0".format(neutrino_archs[str(self.settings.arch)])
                 if self.settings.arch == "armv7":
                     host_arch += "eabi"
-
-        host = None
         if host_arch:
             host = False
             args.append("--host=%s" % host_arch)
