@@ -162,7 +162,7 @@ class LibsodiumConan(ConanFile):
     def _package_visual(self):
         self.copy("*.lib", dst="lib", keep_path=False)
         self.copy("*.dll", dst="bin", keep_path=False)
-        inc_src = os.path.join(self._source_subfolder, "src", self.name, "include")
+        inc_src = os.path.join(self._source_subfolder, "src", "libsodium", "include")
         self.copy("*.h", src=inc_src, dst="include", keep_path=True, excludes=("*/private/*"))
 
     def _package_emscripten(self):
