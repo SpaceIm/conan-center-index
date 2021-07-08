@@ -38,23 +38,8 @@ class LibsodiumConan(ConanFile):
         return "source_subfolder"
 
     @property
-    def _android_id_str(self):
-        return "androideabi" if str(self.settings.arch) in ["armv6", "armv7"] else "android"
-
-    @property
     def _is_mingw(self):
         return self.settings.os == "Windows" and self.settings.compiler == "gcc"
-
-    @property
-    def _vs_configuration(self):
-        configuration = ""
-        if self.options.shared:
-            configuration += "Dyn"
-        else:
-            configuration += "Static"
-        build_type = "Debug" if self.settings.build_type == "Debug" else "Release"
-        configuration += build_type
-        return configuration
 
     @property
     def _vs_sln_folder(self):
@@ -94,9 +79,13 @@ class LibsodiumConan(ConanFile):
 
     def _build_visual(self):
         sln_path = os.path.join(self.build_folder, self._source_subfolder, "builds", "msvc", self._vs_sln_folder, "libsodium.sln")
+        build_type = "{}{}".format(
+            "Dyn" if self.options.shared else "Static",
+            "Debug" if self.settings.build_type == "Debug" else "Release"
+        )
 
         msbuild = MSBuild(self)
-        msbuild.build(sln_path, upgrade_project=False, platforms={"x86": "Win32"}, build_type=self._vs_configuration)
+        msbuild.build(sln_path, upgrade_project=False, platforms={"x86": "Win32"}, build_type=build_type)
 
     def _build_emscripten(self):
         self.run("./dist-build/emscripten.sh --standard", cwd=self._source_subfolder, win_bash=tools.os_info.is_windows)
@@ -118,7 +107,8 @@ class LibsodiumConan(ConanFile):
         host_arch = None
         host = None
         if self.settings.os == "Android":
-            host_arch = "{}-linux-{}".format(tools.to_android_abi(self.settings.arch), self._android_id_str)
+            android_id_str = "androideabi" if str(self.settings.arch) in ["armv6", "armv7"] else "android"
+            host_arch = "{}-linux-{}".format(tools.to_android_abi(self.settings.arch), android_id_str)
         elif self._is_mingw:
             host_arch = "{}-w64-mingw32".format("i686" if self.settings.arch == "x86" else self.settings.arch)
         elif self.settings.os == "Neutrino":
