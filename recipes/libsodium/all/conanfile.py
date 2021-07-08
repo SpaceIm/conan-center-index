@@ -122,6 +122,7 @@ class LibsodiumConan(ConanFile):
         if self.options.get_safe("fPIC"):
             args.append("--with-pic")
 
+        # TODO: maybe remove this manual host logic? Is is not handled by Autotools helper already?
         host_arch = None
         host = None
         if self.settings.os == "Android":
