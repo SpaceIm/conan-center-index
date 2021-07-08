@@ -134,7 +134,7 @@ class LibsodiumConan(ConanFile):
                     host_arch += "eabi"
         if host_arch:
             host = False
-            args.append("--host=%s" % host_arch)
+            args.append("--host={}".format(host_arch))
 
         self._autotools = AutoToolsBuildEnvironment(self, win_bash=tools.os_info.is_windows)
         self._autotools.configure(args=args, configure_dir=self._source_subfolder, host=host)
