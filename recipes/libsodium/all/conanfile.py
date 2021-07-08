@@ -77,6 +77,23 @@ class LibsodiumConan(ConanFile):
         tools.get(**self.conan_data["sources"][self.version],
                   destination=self._source_subfolder, strip_root=True)
 
+    def build(self):
+        self._patch_sources()
+        if self.settings.compiler == "Visual Studio":
+            self._build_visual()
+        elif self.settings.os == "Emscripten":
+            self._build_emscripten()
+        else:
+            self._build_autotools()
+
+    def _patch_sources(self):
+        for patch in self.conan_data.get("patches", {}).get(self.version, []):
+            tools.patch(**patch)
+        if self.settings.os == "Macos":
+            tools.replace_in_file(os.path.join(self._source_subfolder, "configure"),
+                                  r"-install_name \$rpath/",
+                                  "-install_name ")
+
     def _build_visual(self):
         sln_path = os.path.join(self.build_folder, self._source_subfolder, "builds", "msvc", self._vs_sln_folder, "libsodium.sln")
         build_type = "{}{}".format(
@@ -88,7 +105,8 @@ class LibsodiumConan(ConanFile):
         msbuild.build(sln_path, upgrade_project=False, platforms={"x86": "Win32"}, build_type=build_type)
 
     def _build_emscripten(self):
-        self.run("./dist-build/emscripten.sh --standard", cwd=self._source_subfolder, win_bash=tools.os_info.is_windows)
+        with tools.chdir(self._source_subfolder):
+            self.run("./dist-build/emscripten.sh --standard", win_bash=tools.os_info.is_windows)
 
     def _configure_autotools(self):
         if self._autotools:
@@ -137,17 +155,14 @@ class LibsodiumConan(ConanFile):
         autotools = self._configure_autotools()
         autotools.make()
 
-    def build(self):
-        for patch in self.conan_data.get("patches", {}).get(self.version, []):
-            tools.patch(**patch)
-        if self.settings.os == "Macos":
-            tools.replace_in_file(os.path.join(self._source_subfolder, "configure"), r"-install_name \$rpath/", "-install_name ")
+    def package(self):
+        self.copy("*LICENSE", dst="licenses", keep_path=False)
         if self.settings.compiler == "Visual Studio":
-            self._build_visual()
+            self._package_visual()
         elif self.settings.os == "Emscripten":
-            self._build_emscripten()
+            self._package_emscripten()
         else:
-            self._build_autotools()
+            self._package_autotools()
 
     def _package_visual(self):
         self.copy("*.lib", dst="lib", keep_path=False)
@@ -168,15 +183,6 @@ class LibsodiumConan(ConanFile):
         autotools.install()
         tools.rmdir(os.path.join(self.package_folder, "lib", "pkgconfig"))
         tools.remove_files_by_mask(os.path.join(self.package_folder, "lib"), "*.la")
-
-    def package(self):
-        self.copy("*LICENSE", dst="licenses", keep_path=False)
-        if self.settings.compiler == "Visual Studio":
-            self._package_visual()
-        elif self.settings.os == "Emscripten":
-            self._package_emscripten()
-        else:
-            self._package_autotools()
 
     def package_info(self):
         self.cpp_info.names["pkg_config"] = "libsodium"
