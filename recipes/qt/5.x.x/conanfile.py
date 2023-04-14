@@ -443,6 +443,16 @@ class QtConan(ConanFile):
                 self.tool_requires("flex/2.6.4")
         if self.options.qtwayland:
             self.tool_requires("wayland/1.21.0")
+        if self.options.with_doubleconversion:
+            self.tool_requires("double-conversion/3.2.1")
+        if self.options.get_safe("with_icu", False):
+            self.tool_requires("icu/72.1")
+        if self.options.with_pcre2:
+            self.tool_requires("pcre2/10.42")
+        if self.options.with_zstd:
+            self.tool_requires("zstd/1.5.5")
+        if self.options.with_glib:
+            self.tool_requires("glib/2.76.1")
 
     def source(self):
         get(self, **self.conan_data["sources"][self.version],
@@ -759,10 +769,7 @@ class QtConan(ConanFile):
         else:
             xplatform_val = self._xplatform()
             if xplatform_val:
-                if not cross_building(self, skip_x64_x86=True):
-                    args += [f"-platform {xplatform_val}"]
-                else:
-                    args += [f"-xplatform {xplatform_val}"]
+                args += [f"-xplatform {xplatform_val}"]
             else:
                 self.output.warn("host not supported: %s %s %s %s" %
                                  (self.settings.os, self.settings.compiler,
