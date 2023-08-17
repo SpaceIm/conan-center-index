@@ -11,7 +11,7 @@ from conan.errors import ConanInvalidConfiguration
 import os
 import json
 
-required_conan_version = ">=1.50.0"
+required_conan_version = ">=1.51.0"
 
 class CMakeConan(ConanFile):
     name = "cmake"
@@ -40,12 +40,9 @@ class CMakeConan(ConanFile):
         if self.options.with_openssl:
             self.requires("openssl/1.1.1t")
 
-    def validate(self):
+    def validate_build(self):
         if self.settings.os == "Windows" and self.options.bootstrap:
             raise ConanInvalidConfiguration("CMake does not support bootstrapping on Windows")
-
-        if self.settings.os == "Macos" and self.settings.arch == "x86":
-            raise ConanInvalidConfiguration("CMake does not support x86 for macOS")
 
         minimal_cpp_standard = "11"
         if self.settings.get_safe("compiler.cppstd"):
@@ -72,6 +69,10 @@ class CMakeConan(ConanFile):
             raise ConanInvalidConfiguration(
                 f"{self.name} requires a compiler that supports at least C++{minimal_cpp_standard}")
 
+    def validate(self):
+        if self.settings.os == "Macos" and self.settings.arch == "x86":
+            raise ConanInvalidConfiguration("CMake does not support x86 for macOS")
+
     def layout(self):
         if self.options.bootstrap:
             basic_layout(self, src_folder="src")
@@ -96,6 +97,7 @@ class CMakeConan(ConanFile):
                     openssl = self.dependencies["openssl"]
                     bootstrap_cmake_options.append("-DCMAKE_USE_OPENSSL=ON")
                     bootstrap_cmake_options.append(f'-DOPENSSL_USE_STATIC_LIBS={"FALSE" if openssl.options.shared else "TRUE"}')
+                    bootstrap_cmake_options.append(f'-DOPENSSL_ROOT_DIR={openssl.package_path}')
                 else:
                     bootstrap_cmake_options.append("-DCMAKE_USE_OPENSSL=OFF")
             save(self, "bootstrap_args", json.dumps({"bootstrap_cmake_options": ' '.join(arg for arg in bootstrap_cmake_options)}))
