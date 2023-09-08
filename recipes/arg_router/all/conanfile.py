@@ -55,6 +55,13 @@ class ArgRouterConan(ConanFile):
                 f"{self.ref} requires C++{self._min_cppstd}, which your compiler does not support."
             )
 
+        if str(self.settings.compiler) == "msvc" and \
+            Version(self.settings.compiler.version) >= Version("193") and \
+            Version(self.version) < "1.4.0":
+            raise ConanInvalidConfiguration(
+                f"{self.ref} does not support MSVC 19.35 and above, please switch to arg_router v1.4.0"
+            )
+
     def build_requirements(self):
         self.tool_requires("cmake/[>=3.18 <4]")
 
